@@ -1,0 +1,14 @@
+import {readFile,writeFile,copyFile} from 'node:fs/promises';
+const root='C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe';
+let app=await readFile(root+'/src/App.tsx','utf8');
+const old='      setAlbum(value.album)\n      setGeneration(current => current + 1)';
+if(!app.includes(old)) throw new Error('Expected automatic adoption source missing');
+app=app.replace(old,'      setAlbum(value.album)\n      // Keep Contents mounted so the camera controller and orbit clock remain continuous.');
+await writeFile(root+'/src/App.tsx',app);
+let scene=await readFile(root+'/src/components/GalaxyScene.tsx','utf8');
+scene=scene.replace('componentDidUpdate(previous: { generation: number }) {','componentDidUpdate(previous: { generation: number; album: Album }) {');
+scene=scene.replace('if (this.state.failed && previous.generation !== this.props.generation)','if (this.state.failed && (previous.generation !== this.props.generation || previous.album.cover !== this.props.album.cover))');
+await writeFile(root+'/src/components/GalaxyScene.tsx',scene);
+await copyFile(new URL('./automaticAlbum.ts',import.meta.url),root+'/src/lib/automaticAlbum.ts');
+await copyFile(new URL('./automaticAlbum.test.ts',import.meta.url),root+'/tests/automaticAlbum.test.ts');
+console.log('Camera controller stays mounted during automatic album changes; durations display whole seconds.');

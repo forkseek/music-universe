@@ -1,0 +1,118 @@
+[
+  {
+    "path": "UNIVERSE_ENHANCEMENTS.md",
+    "kind": "added"
+  },
+  {
+    "path": "package.json",
+    "kind": "modified"
+  },
+  {
+    "path": "src/App.tsx",
+    "kind": "modified"
+  },
+  {
+    "path": "src/components/GalaxyScene.tsx",
+    "kind": "modified"
+  },
+  {
+    "path": "src/components/ImmersiveBackground.tsx",
+    "kind": "modified"
+  },
+  {
+    "path": "src/components/LyricConstellation.tsx",
+    "kind": "modified"
+  },
+  {
+    "path": "src/components/SceneInteraction.tsx",
+    "kind": "modified"
+  },
+  {
+    "path": "src/components/UniverseExperienceControls.tsx",
+    "kind": "added"
+  },
+  {
+    "path": "src/hooks/useAudioAnalysis.ts",
+    "kind": "added"
+  },
+  {
+    "path": "src/hooks/useAudioPlayback.ts",
+    "kind": "modified"
+  },
+  {
+    "path": "src/hooks/useGalaxyNavigation.ts",
+    "kind": "modified"
+  },
+  {
+    "path": "src/hooks/useInteractionActivity.ts",
+    "kind": "added"
+  },
+  {
+    "path": "src/hooks/useReducedMotion.ts",
+    "kind": "added"
+  },
+  {
+    "path": "src/lib/audioReactivity.ts",
+    "kind": "added"
+  },
+  {
+    "path": "src/lib/cameraMotion.ts",
+    "kind": "added"
+  },
+  {
+    "path": "src/lib/interactionQuality.ts",
+    "kind": "added"
+  },
+  {
+    "path": "src/lib/sceneFraming.ts",
+    "kind": "modified"
+  },
+  {
+    "path": "src/lib/spaceCamera.ts",
+    "kind": "modified"
+  },
+  {
+    "path": "src/lib/universeExperience.ts",
+    "kind": "added"
+  },
+  {
+    "path": "src/lyric-constellation.css",
+    "kind": "modified"
+  },
+  {
+    "path": "src/universe-experience.css",
+    "kind": "added"
+  },
+  {
+    "path": "tests/anchorReturn.test.ts",
+    "kind": "added"
+  },
+  {
+    "path": "tests/audioReactivity.test.ts",
+    "kind": "added"
+  },
+  {
+    "path": "tests/cameraMotion.test.ts",
+    "kind": "added"
+  },
+  {
+    "path": "tests/immersive-lyrics.mjs",
+    "kind": "modified"
+  },
+  {
+    "path": "tests/interactionQuality.test.ts",
+    "kind": "added"
+  },
+  {
+    "path": "tests/universe-experience.mjs",
+    "kind": "added"
+  },
+  {
+    "path": "tests/universe-fixture.mjs",
+    "kind": "added"
+  },
+  {
+    "path": "tests/universeExperience.test.ts",
+    "kind": "added"
+  }
+]

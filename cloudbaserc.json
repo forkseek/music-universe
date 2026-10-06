@@ -1,0 +1,31 @@
+{
+  "version": "2.0",
+  "envId": "<你的 CloudBase 环境 ID>",
+  "framework": {
+    "name": "music-world",
+    "plugins": {
+      "container": {
+        "use": "@cloudbase/framework-plugin-container",
+        "inputs": {
+          "serviceName": "music-world",
+          "servicePath": "/music-world",
+          "localPath": "./",
+          "containerPort": 3000,
+          "minNum": 1,
+          "maxNum": 1,
+          "isPublic": true,
+          "envVariables": {
+            "APP_ORIGIN": "https://<你的公网访问域名>",
+            "DATABASE_PATH": "/app/data/music-world.db",
+            "NEXT_PUBLIC_ENABLE_QQMUSIC": "false",
+            "MUSIC_DESKTOP_LOGIN": "0",
+            "SQLITE_JOURNAL_MODE": "DELETE"
+          },
+          "volumeMounts": {
+            "/app/data": "<你的 CFS 文件存储 Addon 名称>"
+          }
+        }
+      }
+    }
+  }
+}

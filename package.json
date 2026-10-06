@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
-    "build": "next build",
+    "build": "npm run build:universe && next build",
+    "build:universe": "node scripts/sync-universe.mjs",
     "start": "node --env-file-if-exists=.env.local scripts/start.mjs",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -26,6 +27,10 @@
     "check": "npm run lint && npm run typecheck && npm test"
   },
   "overrides": {
+    "NeteaseCloudMusicApi": {
+      "music-metadata": "11.14.0",
+      "basic-ftp": "6.2.2"
+    },
     "@esbuild-kit/core-utils": {
       "esbuild": "0.25.12"
     }
@@ -37,7 +42,9 @@
     "d3-force": "3.0.0",
     "drizzle-orm": "0.45.3",
     "motion": "14.0.0",
+    "NeteaseCloudMusicApi": "4.32.0",
     "next": "16.3.8",
+    "qrcode": "1.5.4",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "server-only": "0.0.1",
@@ -52,6 +59,7 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "drizzle-kit": "0.31.11",
+    "electron": "42.11.10",
     "eslint": "9.39.5",
     "eslint-config-next": "16.3.8",
     "tailwindcss": "4.3.3",

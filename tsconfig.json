@@ -37,7 +37,13 @@
     ".next-test/types/**/*.ts",
     ".next-test/dev/types/**/*.ts",
     ".next-baseline/types/**/*.ts",
-    ".next-baseline/dev/types/**/*.ts"
+    ".next-baseline/dev/types/**/*.ts",
+    ".next-qq-integration/types/**/*.ts",
+    ".next-qq-integration/dev/types/**/*.ts",
+    ".next-deployverify/types/**/*.ts",
+    ".next-deployverify/dev/types/**/*.ts",
+    ".next-deployverify2/types/**/*.ts",
+    ".next-deployverify2/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

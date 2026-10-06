@@ -7,6 +7,7 @@ export interface ListeningTrack {
   id: string;
   title: string;
   artist: string;
+  album?: string;
   description: string;
   genre: string;
   url: string;

@@ -11,8 +11,9 @@ import { hallModules, hallStageFromHash, type HallStage } from "./hall-modules";
 import { originFromEvent, useSceneTransition, type SceneOrigin } from "./SceneTransition";
 import { WorldDirectory } from "./WorldDirectory";
 import { MusicPlayer } from "@/components/player/MusicPlayer";
+import { AlbumUniverseRoom } from "./AlbumUniverseRoom";
 
-const backgrounds: Record<HallStage, SceneBackdropName> = { hall: "intro", import: "import", library: "library", demo: "demo", qq: "qq", world: "world", journey: "journey", guide: "world" };
+const backgrounds: Record<HallStage, SceneBackdropName> = { hall: "intro", universe: "world", import: "import", library: "library", demo: "demo", qq: "qq", world: "world", journey: "journey", guide: "world" };
 
 export function StagedHome({ providers }: { providers: Awaited<ReturnType<typeof listProviderStatuses>> }) {
   const { travel, travelling } = useSceneTransition();
@@ -29,7 +30,7 @@ export function StagedHome({ providers }: { providers: Awaited<ReturnType<typeof
     const followHistory = () => {
       const next = hallStageFromHash();
       if (next === stageRef.current) return;
-      void travel({ label: hallModules.find((item) => item.id === next)?.title ?? "音乐大厅", action: () => { stageRef.current = next; setStage(next); } });
+      void travel({ label: next === "universe" ? "专辑宇宙" : hallModules.find((item) => item.id === next)?.title ?? "音乐大厅", visualOnly: next === "universe" || stageRef.current === "universe", action: () => { stageRef.current = next; setStage(next); } });
     };
     window.addEventListener("popstate", followHistory);
     window.addEventListener("hashchange", followHistory);
@@ -40,7 +41,7 @@ export function StagedHome({ providers }: { providers: Awaited<ReturnType<typeof
 
   function enter(next: HallStage, origin?: SceneOrigin) {
     if (next === stageRef.current) return;
-    void travel({ label: hallModules.find((item) => item.id === next)?.title ?? "音乐大厅", origin, action: () => {
+    void travel({ label: next === "universe" ? "专辑宇宙" : hallModules.find((item) => item.id === next)?.title ?? "音乐大厅", visualOnly: next === "universe" || stageRef.current === "universe", origin, action: () => {
       stageRef.current = next;
       setStage(next);
       window.history.pushState(null, "", `#${next}`);
@@ -68,9 +69,10 @@ export function StagedHome({ providers }: { providers: Awaited<ReturnType<typeof
     } finally { setBusy(false); openingDemo.current = false; }
   }
 
-  return <><SceneBackdrop scene={backgrounds[stage]} /><main className={`mw-portal-app ${stage === "hall" ? "is-in-hall" : "is-in-module"}`} tabIndex={-1} data-scene-focus data-module={stage}>
-    <ImmersiveHall active={stage === "hall"} onEnter={(next, origin) => enter(next, origin)} />
-    <div className="mw-module-shell" hidden={stage === "hall"}>
+  return <><SceneBackdrop scene={backgrounds[stage]} /><main className={`mw-portal-app ${stage === "hall" ? "is-in-hall" : stage === "universe" ? "is-in-universe" : "is-in-module"}`} tabIndex={-1} data-scene-focus data-module={stage}>
+    <ImmersiveHall active={stage === "hall"} onEnterUniverse={(origin) => enter("universe", origin)} />
+    {stage === "universe" && <AlbumUniverseRoom onNavigate={(room) => enter(room)} />}
+    <div className="mw-module-shell" hidden={stage === "hall" || stage === "universe"}>
       <header className="mw-module-header"><button className="mw-module-brand" type="button" onClick={(event) => enter("hall", originFromEvent(event))}>music<span>world</span></button><span className="mw-module-current"><i aria-hidden="true">{currentModule?.symbol}</i>{currentModule?.icon} <span aria-hidden="true">/</span> <strong>{currentModule?.title}</strong></span><button className="mw-return-hall" type="button" onClick={(event) => enter("hall", originFromEvent(event))}>回到音乐大厅 <span aria-hidden="true">↶</span></button></header>
       <div className="mw-module-scroll" ref={screen}>
         <section className="mw-module-room" hidden={stage !== "import"} aria-label="话筒 · 导入歌单"><div className="mw-module-intro"><p className="mw-overline">MICROPHONE / BRING YOUR MUSIC</p><h1>把喜欢的歌，<span>带进这个世界。</span></h1><p>先预览整理结果，再保存到音乐库。</p></div><div className="mw-stage-workspace"><PlaylistFileImport onSaved={() => enter("library")} /></div></section>

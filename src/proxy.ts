@@ -16,5 +16,5 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // Image sequences and videos bypass Proxy; only documents need a page nonce.
-  matcher: ["/((?!api(?:/|$)|_next(?:/|$)|media(?:/|$)|samples(?:/|$)|favicon\\.ico$).*)"],
+  matcher: ["/((?!api(?:/|$)|_next(?:/|$)|universe(?:/|$)|media(?:/|$)|samples(?:/|$)|favicon\\.ico$).*)"],
 };

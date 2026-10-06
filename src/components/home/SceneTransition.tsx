@@ -9,9 +9,10 @@ type TravelRequest = {
   label: string;
   origin?: SceneOrigin;
   href?: string;
+  visualOnly?: boolean;
   action?: () => void | string | Promise<void | string>;
 };
-type FogState = { phase: "cover" | "hold" | "reveal"; label: string; origin: SceneOrigin };
+type FogState = { phase: "cover" | "hold" | "reveal"; label: string; origin: SceneOrigin; visualOnly: boolean };
 const TravelContext = createContext<{ travel: (request: TravelRequest) => Promise<boolean>; travelling: boolean } | null>(null);
 const pause = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 const painted = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
@@ -40,7 +41,7 @@ export function SceneTransitionProvider({ children }: { children: ReactNode }) {
     setError("");
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const origin = request.origin ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const scene: FogState = { phase: "cover", label: request.label, origin };
+    const scene: FogState = { phase: "cover", label: request.label, origin, visualOnly: request.visualOnly === true };
     setFog(scene);
     await pause(reduced ? 30 : 620);
     setFog({ ...scene, phase: "hold" });
@@ -70,18 +71,23 @@ export function SceneTransitionProvider({ children }: { children: ReactNode }) {
     await pause(reduced ? 50 : 760);
     setFog(null);
     locked.current = false;
-    requestAnimationFrame(() => document.querySelector<HTMLElement>("main[data-scene-focus]")?.focus({ preventScroll: true }));
+    requestAnimationFrame(() => {
+      const main = document.querySelector<HTMLElement>("main[data-scene-focus]");
+      const universe = main?.querySelector<HTMLIFrameElement>(".mw-universe-room iframe");
+      if (universe) universe.contentWindow?.focus();
+      else main?.focus({ preventScroll: true });
+    });
     return completed;
   }, [router, pathname]);
 
   const value = useMemo(() => ({ travel, travelling: fog !== null }), [travel, fog]);
   return <TravelContext.Provider value={value}>
     <div className={`mw-scene-content ${fog ? "is-travelling" : ""}`} inert={fog !== null} aria-busy={fog !== null}>{children}</div>
-    {fog && <div className={`mw-fog-transition mw-fog-${fog.phase}`} style={{ "--fog-x": `${fog.origin.x}px`, "--fog-y": `${fog.origin.y}px` } as CSSProperties} role="status" aria-live="polite" aria-label={`正在进入${fog.label}`}>
+    {fog && <div className={`mw-fog-transition mw-fog-${fog.phase}${fog.visualOnly ? " mw-universe-transition" : ""}`} style={{ "--fog-x": `${fog.origin.x}px`, "--fog-y": `${fog.origin.y}px` } as CSSProperties} role="status" aria-live="polite" aria-label={`正在进入${fog.label}`}>
       <div className="mw-fog-veil" aria-hidden="true" />
       <div className="mw-fog-bloom" aria-hidden="true" />
       <div className="mw-fog-clouds" aria-hidden="true">{Array.from({ length: 8 }, (_, index) => <i key={index} style={{ "--cloud-i": index } as CSSProperties} />)}</div>
-      <div className="mw-fog-destination"><span>NEXT DISCOVERY</span><strong>{fog.label}</strong><i aria-hidden="true" /></div>
+      {fog.visualOnly ? <div className="mw-universe-loading-orbit" aria-hidden="true"><i /><i /><i /><b /></div> : <div className="mw-fog-destination"><span>NEXT DISCOVERY</span><strong>{fog.label}</strong><i aria-hidden="true" /></div>}
     </div>}
     {error && !fog && <div role="alert" className="mw-travel-error"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="关闭提示">×</button></div>}
   </TravelContext.Provider>;

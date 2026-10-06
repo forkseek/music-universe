@@ -1,0 +1,1869 @@
+diff --git a/.env.example b/.env.example
+index 936e4b6..3f63289 100644
+--- a/.env.example
++++ b/.env.example
+@@ -2,8 +2,9 @@
+ # Enable QQ only inside an authorized Tencent LinkLink custom H5 panel after checking the official SDK and project permission.
+ NEXT_PUBLIC_ENABLE_QQMUSIC=false
+ 
+-# Optional destination of the separately running Album Solar System scene.
+-NEXT_PUBLIC_MUSIC_UNIVERSE_URL=http://127.0.0.1:5188/
++# Hall opens the same-origin #universe subpage. The standalone 5188 app remains usable.
++# Optional absolute path to the music-universe source, used by npm run build:universe.
++MUSIC_UNIVERSE_SOURCE=
+ 
+ # Optional destination of the Hybrid Music Universe room, opened from the hall.
+ NEXT_PUBLIC_MUSIC_UNIVERSE_ROOM_URL=http://127.0.0.1:5173/?from=hall
+@@ -12,11 +13,14 @@ NEXT_PUBLIC_MUSIC_UNIVERSE_ROOM_URL=http://127.0.0.1:5173/?from=hall
+ # In this mode run Music World on a different local port such as 3002.
+ RADIOHAND_API_ORIGIN=
+ 
+-# Server only. Optional secret for encrypted QQ Music account credentials.
+-# Without it, the server creates a local key beside DATABASE_PATH. Never expose it via NEXT_PUBLIC_.
+-QQ_CREDENTIAL_SECRET=
++# Own, registered QQ Connect website application. Keep App Key on the server.
++# QQ identity authorization does not grant QQ Music listening/member rights.
++QQ_CONNECT_APP_ID=
++QQ_CONNECT_APP_SECRET=
++QQ_CONNECT_REDIRECT_URI=
++# Callback path: /api/qq/login/callback on the registered application domain.
+ 
+-# Server only. Encryption for Netease/Kugou/Qishui credentials; a local key is
++# Server only. Encryption for QQ Connect and other music account credentials; a local key is
+ # created beside DATABASE_PATH when this is empty. Never use NEXT_PUBLIC_.
+ MUSIC_CREDENTIAL_SECRET=
+ # Official Electron login windows are for a server running on this computer.
+diff --git a/eslint.config.mjs b/eslint.config.mjs
+index 441bb18..8361b46 100644
+--- a/eslint.config.mjs
++++ b/eslint.config.mjs
+@@ -6,6 +6,6 @@ export default defineConfig([
+   ...nextVitals,
+   ...nextTypescript,
+   { files: ["integrations/mineradio/*.cjs"], rules: { "@typescript-eslint/no-require-imports": "off" } },
+-  globalIgnores(["integrations/mineradio/vendor/**"]),
++  globalIgnores(["integrations/mineradio/vendor/**", "public/universe/**"]),
+   globalIgnores([".next/**", ".next-test/**", ".next-ui-review/**", ".next-hall-review/**", ".next-player-review/**", ".next-baseline/**", ".next-qq-integration/**", "work/**", "out/**", "coverage/**", "next-env.d.ts", "playwright-report/**", "test-results/**"]),
+ ]);
+diff --git a/next.config.ts b/next.config.ts
+index 74a87f6..4117518 100644
+--- a/next.config.ts
++++ b/next.config.ts
+@@ -1,5 +1,5 @@
+ import type { NextConfig } from "next";
+-import { frameAncestorSources } from "./src/lib/server/security-policy";
++import { frameAncestorSources, universeContentSecurityPolicy } from "./src/lib/server/security-policy";
+ 
+ const frameParents = frameAncestorSources(process.env.APP_FRAME_ANCESTORS);
+ 
+@@ -7,6 +7,8 @@ const config: NextConfig = {
+   distDir: process.env.NEXT_DIST_DIR || ".next",
+   devIndicators: false,
+   poweredByHeader: false,
++  // QQ callbacks and media URLs contain short-lived credentials. Avoid dev URL logs.
++  logging: { incomingRequests: { ignore: [/^\/api\/qq\/login\/callback(?:\?|$)/, /^\/api\/(?:music|qq)\/audio(?:\?|$)/] } },
+   output: "standalone",
+   serverExternalPackages: ["better-sqlite3"],
+   outputFileTracingIncludes: { "/*": ["./src/db/migrations/**/*"] },
+@@ -18,6 +20,9 @@ const config: NextConfig = {
+       { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+       { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
+       ...(frameParents.length ? [] : [{ key: "X-Frame-Options", value: "DENY" }]),
++    ] }, { source: "/universe/:path*", headers: [
++      { key: "X-Frame-Options", value: "SAMEORIGIN" },
++      { key: "Content-Security-Policy", value: universeContentSecurityPolicy() },
+     ] }];
+   },
+ };
+diff --git a/package.json b/package.json
+index 943228c..2b57337 100644
+--- a/package.json
++++ b/package.json
+@@ -9,7 +9,8 @@
+   },
+   "scripts": {
+     "dev": "next dev --hostname 127.0.0.1",
+-    "build": "next build",
++    "build": "npm run build:universe && next build",
++    "build:universe": "node scripts/sync-universe.mjs",
+     "start": "node --env-file-if-exists=.env.local scripts/start.mjs",
+     "lint": "eslint .",
+     "typecheck": "tsc --noEmit",
+diff --git a/src/app/api/qq/login/qr/route.ts b/src/app/api/qq/login/qr/route.ts
+index dfe474a..27ad70c 100644
+--- a/src/app/api/qq/login/qr/route.ts
++++ b/src/app/api/qq/login/qr/route.ts
+@@ -4,5 +4,5 @@ import { limitPlayerRequests } from "@/lib/music/providers/radiohand-qq";
+ import { startQqLogin } from "@/lib/music/providers/qq-account";
+ export const runtime = "nodejs";
+ export function GET(request: NextRequest) {
+-  return withUser(request, (userId) => { requireSameOrigin(request); limitPlayerRequests(userId); return startQqLogin(userId, request.signal); }, true);
++  return withUser(request, (userId) => { requireSameOrigin(request); limitPlayerRequests(userId); return startQqLogin(userId, request.signal, request); }, true);
+ }
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index 85bfa7d..ff38939 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -9,6 +9,7 @@ import "./hall-living.css";
+ import "./music-player.css";
+ import "./scene-rooms.css";
+ import "./hall-background-music.css";
++import "./album-universe.css";
+ import { SceneTransitionProvider } from "@/components/home/SceneTransition";
+ 
+ export const metadata: Metadata = {
+diff --git a/src/components/home/hall-modules.ts b/src/components/home/hall-modules.ts
+index 7de8ec2..fe2b619 100644
+--- a/src/components/home/hall-modules.ts
++++ b/src/components/home/hall-modules.ts
+@@ -9,9 +9,10 @@ export const hallModules = [
+ ] as const;
+ 
+ export type HallModule = (typeof hallModules)[number]["id"];
+-export type HallStage = "hall" | HallModule;
++export type HallStage = "hall" | "universe" | HallModule;
+ 
+ export function hallStageFromHash(): HallStage {
+   const value = window.location.hash.slice(1);
++  if (value === "universe") return "universe";
+   return hallModules.some((module) => module.id === value) ? value as HallModule : "hall";
+ }
+diff --git a/src/components/home/HallUniversePortal.tsx b/src/components/home/HallUniversePortal.tsx
+index 63f2f49..7ae9c6f 100644
+--- a/src/components/home/HallUniversePortal.tsx
++++ b/src/components/home/HallUniversePortal.tsx
+@@ -2,13 +2,14 @@
+ 
+ import { hallModules } from "./hall-modules";
+ import type { PointerEvent } from "react";
++import { originFromEvent, type SceneOrigin } from "./SceneTransition";
+ 
+-const universeUrl = process.env.NEXT_PUBLIC_MUSIC_UNIVERSE_URL || "http://127.0.0.1:5188/";
++const universeUrl = "/#universe";
+ // Keep the destination on the original central radio hotspot without changing
+ // the shared module definitions used by the other hash routes.
+ const position = hallModules.find((module) => module.id === "world")!;
+ 
+-export function HallUniversePortal() {
++export function HallUniversePortal({ onEnter }: { onEnter?: (origin: SceneOrigin) => void }) {
+   function tiltCover(event: PointerEvent<HTMLAnchorElement>) {
+     if (event.pointerType !== "mouse" || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+     const box = event.currentTarget.getBoundingClientRect();
+@@ -24,6 +25,10 @@ export function HallUniversePortal() {
+   }
+ 
+   return <a className="mw-hall-hotspot mw-hotspot-below mw-universe-portal" href={universeUrl}
++    onClick={(event) => {
++      if (!onEnter || event.defaultPrevented || event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
++      event.preventDefault(); onEnter(originFromEvent(event));
++    }}
+     style={{ left: `${position.x}%`, top: `${position.y}%`, width: `${position.size}%` }}
+     onPointerMove={tiltCover} onPointerLeave={(event) => resetCover(event.currentTarget)} onBlur={(event) => resetCover(event.currentTarget)}
+     data-hall-control data-portal="universe" data-testid="hall-universe-entry" aria-label="进入专辑宇宙">
+diff --git a/src/components/home/ImmersiveHall.tsx b/src/components/home/ImmersiveHall.tsx
+index 1397834..bc5198e 100644
+--- a/src/components/home/ImmersiveHall.tsx
++++ b/src/components/home/ImmersiveHall.tsx
+@@ -4,9 +4,10 @@ import { useEffect, useRef, type PointerEvent } from "react";
+ import { CursorLightField, type LightSignal } from "./CursorLightField";
+ import { HallLivingScene } from "./HallLivingScene";
+ import { HallUniversePortal } from "./HallUniversePortal";
++import type { SceneOrigin } from "./SceneTransition";
+ 
+ /** The hall has one destination; the room and its light remain decorative. */
+-export function ImmersiveHall({ active }: { active: boolean }) {
++export function ImmersiveHall({ active, onEnterUniverse }: { active: boolean; onEnterUniverse?: (origin: SceneOrigin) => void }) {
+   const root = useRef<HTMLElement>(null);
+   const panorama = useRef<HTMLDivElement>(null);
+   const plane = useRef<HTMLDivElement>(null);
+@@ -58,7 +59,7 @@ export function ImmersiveHall({ active }: { active: boolean }) {
+     <div ref={panorama} className="mw-hall-panorama"><div className="mw-hall-plane"><div ref={plane} className="mw-hall-plane-motion">
+       <div className="mw-hall-final" aria-hidden="true" />
+       <HallLivingScene key={active ? "active" : "away"} active={active} />
+-      <nav className="mw-hall-portals" aria-label="专辑宇宙入口"><HallUniversePortal /></nav>
++      <nav className="mw-hall-portals" aria-label="专辑宇宙入口"><HallUniversePortal onEnter={onEnterUniverse} /></nav>
+     </div></div></div>
+     <CursorLightField active={active} signal={light} />
+     <div className="mw-hall-vignette" aria-hidden="true" />
+diff --git a/src/components/home/SceneTransition.tsx b/src/components/home/SceneTransition.tsx
+index 11c39de..a29b80b 100644
+--- a/src/components/home/SceneTransition.tsx
++++ b/src/components/home/SceneTransition.tsx
+@@ -9,9 +9,10 @@ type TravelRequest = {
+   label: string;
+   origin?: SceneOrigin;
+   href?: string;
++  visualOnly?: boolean;
+   action?: () => void | string | Promise<void | string>;
+ };
+-type FogState = { phase: "cover" | "hold" | "reveal"; label: string; origin: SceneOrigin };
++type FogState = { phase: "cover" | "hold" | "reveal"; label: string; origin: SceneOrigin; visualOnly: boolean };
+ const TravelContext = createContext<{ travel: (request: TravelRequest) => Promise<boolean>; travelling: boolean } | null>(null);
+ const pause = (milliseconds: number) => new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+ const painted = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+@@ -40,7 +41,7 @@ export function SceneTransitionProvider({ children }: { children: ReactNode }) {
+     setError("");
+     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+     const origin = request.origin ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+-    const scene: FogState = { phase: "cover", label: request.label, origin };
++    const scene: FogState = { phase: "cover", label: request.label, origin, visualOnly: request.visualOnly === true };
+     setFog(scene);
+     await pause(reduced ? 30 : 620);
+     setFog({ ...scene, phase: "hold" });
+@@ -70,18 +71,23 @@ export function SceneTransitionProvider({ children }: { children: ReactNode }) {
+     await pause(reduced ? 50 : 760);
+     setFog(null);
+     locked.current = false;
+-    requestAnimationFrame(() => document.querySelector<HTMLElement>("main[data-scene-focus]")?.focus({ preventScroll: true }));
++    requestAnimationFrame(() => {
++      const main = document.querySelector<HTMLElement>("main[data-scene-focus]");
++      const universe = main?.querySelector<HTMLIFrameElement>(".mw-universe-room iframe");
++      if (universe) universe.contentWindow?.focus();
++      else main?.focus({ preventScroll: true });
++    });
+     return completed;
+   }, [router, pathname]);
+ 
+   const value = useMemo(() => ({ travel, travelling: fog !== null }), [travel, fog]);
+   return <TravelContext.Provider value={value}>
+     <div className={`mw-scene-content ${fog ? "is-travelling" : ""}`} inert={fog !== null} aria-busy={fog !== null}>{children}</div>
+-    {fog && <div className={`mw-fog-transition mw-fog-${fog.phase}`} style={{ "--fog-x": `${fog.origin.x}px`, "--fog-y": `${fog.origin.y}px` } as CSSProperties} role="status" aria-live="polite" aria-label={`正在进入${fog.label}`}>
++    {fog && <div className={`mw-fog-transition mw-fog-${fog.phase}${fog.visualOnly ? " mw-universe-transition" : ""}`} style={{ "--fog-x": `${fog.origin.x}px`, "--fog-y": `${fog.origin.y}px` } as CSSProperties} role="status" aria-live="polite" aria-label={`正在进入${fog.label}`}>
+       <div className="mw-fog-veil" aria-hidden="true" />
+       <div className="mw-fog-bloom" aria-hidden="true" />
+       <div className="mw-fog-clouds" aria-hidden="true">{Array.from({ length: 8 }, (_, index) => <i key={index} style={{ "--cloud-i": index } as CSSProperties} />)}</div>
+-      <div className="mw-fog-destination"><span>NEXT DISCOVERY</span><strong>{fog.label}</strong><i aria-hidden="true" /></div>
++      {fog.visualOnly ? <div className="mw-universe-loading-orbit" aria-hidden="true"><i /><i /><i /><b /></div> : <div className="mw-fog-destination"><span>NEXT DISCOVERY</span><strong>{fog.label}</strong><i aria-hidden="true" /></div>}
+     </div>}
+     {error && !fog && <div role="alert" className="mw-travel-error"><span>{error}</span><button type="button" onClick={() => setError("")} aria-label="关闭提示">×</button></div>}
+   </TravelContext.Provider>;
+diff --git a/src/components/home/StagedHome.tsx b/src/components/home/StagedHome.tsx
+index 8d2ef0e..cd1838c 100644
+--- a/src/components/home/StagedHome.tsx
++++ b/src/components/home/StagedHome.tsx
+@@ -11,8 +11,9 @@ import { hallModules, hallStageFromHash, type HallStage } from "./hall-modules";
+ import { originFromEvent, useSceneTransition, type SceneOrigin } from "./SceneTransition";
+ import { WorldDirectory } from "./WorldDirectory";
+ import { MusicPlayer } from "@/components/player/MusicPlayer";
++import { AlbumUniverseRoom } from "./AlbumUniverseRoom";
+ 
+-const backgrounds: Record<HallStage, SceneBackdropName> = { hall: "intro", import: "import", library: "library", demo: "demo", qq: "qq", world: "world", journey: "journey", guide: "world" };
++const backgrounds: Record<HallStage, SceneBackdropName> = { hall: "intro", universe: "world", import: "import", library: "library", demo: "demo", qq: "qq", world: "world", journey: "journey", guide: "world" };
+ 
+ export function StagedHome({ providers }: { providers: Awaited<ReturnType<typeof listProviderStatuses>> }) {
+   const { travel, travelling } = useSceneTransition();
+@@ -29,7 +30,7 @@ export function StagedHome({ providers }: { providers: Awaited<ReturnType<typeof
+     const followHistory = () => {
+       const next = hallStageFromHash();
+       if (next === stageRef.current) return;
+-      void travel({ label: hallModules.find((item) => item.id === next)?.title ?? "音乐大厅", action: () => { stageRef.current = next; setStage(next); } });
++      void travel({ label: next === "universe" ? "专辑宇宙" : hallModules.find((item) => item.id === next)?.title ?? "音乐大厅", visualOnly: next === "universe" || stageRef.current === "universe", action: () => { stageRef.current = next; setStage(next); } });
+     };
+     window.addEventListener("popstate", followHistory);
+     window.addEventListener("hashchange", followHistory);
+@@ -40,7 +41,7 @@ export function StagedHome({ providers }: { providers: Awaited<ReturnType<typeof
+ 
+   function enter(next: HallStage, origin?: SceneOrigin) {
+     if (next === stageRef.current) return;
+-    void travel({ label: hallModules.find((item) => item.id === next)?.title ?? "音乐大厅", origin, action: () => {
++    void travel({ label: next === "universe" ? "专辑宇宙" : hallModules.find((item) => item.id === next)?.title ?? "音乐大厅", visualOnly: next === "universe" || stageRef.current === "universe", origin, action: () => {
+       stageRef.current = next;
+       setStage(next);
+       window.history.pushState(null, "", `#${next}`);
+@@ -68,9 +69,10 @@ export function StagedHome({ providers }: { providers: Awaited<ReturnType<typeof
+     } finally { setBusy(false); openingDemo.current = false; }
+   }
+ 
+-  return <><SceneBackdrop scene={backgrounds[stage]} /><main className={`mw-portal-app ${stage === "hall" ? "is-in-hall" : "is-in-module"}`} tabIndex={-1} data-scene-focus data-module={stage}>
+-    <ImmersiveHall active={stage === "hall"} />
+-    <div className="mw-module-shell" hidden={stage === "hall"}>
++  return <><SceneBackdrop scene={backgrounds[stage]} /><main className={`mw-portal-app ${stage === "hall" ? "is-in-hall" : stage === "universe" ? "is-in-universe" : "is-in-module"}`} tabIndex={-1} data-scene-focus data-module={stage}>
++    <ImmersiveHall active={stage === "hall"} onEnterUniverse={(origin) => enter("universe", origin)} />
++    {stage === "universe" && <AlbumUniverseRoom onNavigate={(room) => enter(room)} />}
++    <div className="mw-module-shell" hidden={stage === "hall" || stage === "universe"}>
+       <header className="mw-module-header"><button className="mw-module-brand" type="button" onClick={(event) => enter("hall", originFromEvent(event))}>music<span>world</span></button><span className="mw-module-current"><i aria-hidden="true">{currentModule?.symbol}</i>{currentModule?.icon} <span aria-hidden="true">/</span> <strong>{currentModule?.title}</strong></span><button className="mw-return-hall" type="button" onClick={(event) => enter("hall", originFromEvent(event))}>回到音乐大厅 <span aria-hidden="true">↶</span></button></header>
+       <div className="mw-module-scroll" ref={screen}>
+         <section className="mw-module-room" hidden={stage !== "import"} aria-label="话筒 · 导入歌单"><div className="mw-module-intro"><p className="mw-overline">MICROPHONE / BRING YOUR MUSIC</p><h1>把喜欢的歌，<span>带进这个世界。</span></h1><p>先预览整理结果，再保存到音乐库。</p></div><div className="mw-stage-workspace"><PlaylistFileImport onSaved={() => enter("library")} /></div></section>
+diff --git a/src/components/player/MusicPlayer.tsx b/src/components/player/MusicPlayer.tsx
+index 158774f..b1de73b 100644
+--- a/src/components/player/MusicPlayer.tsx
++++ b/src/components/player/MusicPlayer.tsx
+@@ -1,8 +1,8 @@
+ "use client";
+ 
+-import { useEffect, useRef, useState } from "react";
++import { useCallback, useEffect, useRef, useState } from "react";
+ import type { ChangeEvent, DragEvent } from "react";
+-import { listeningConnection, listeningLyrics, logoutQqLogin, pollQqLogin, searchListeningPage, searchListeningTracks, startQqLogin, type ListeningConnection } from "@/lib/music/providers/radiohand-browser";
++import { cancelQqLogin, listeningConnection, listeningLyrics, logoutQqLogin, pollQqLogin, searchListeningPage, searchListeningTracks, startQqLogin, type ListeningConnection } from "@/lib/music/providers/radiohand-browser";
+ import { WorldDirectory } from "@/components/home/WorldDirectory";
+ import type { HallModule } from "@/components/home/hall-modules";
+ import { MusicAtmosphere } from "./MusicAtmosphere";
+@@ -11,7 +11,7 @@ import { useMusicPlayback } from "./useMusicPlayback";
+ 
+ type Panel = "queue" | "search" | "lyrics" | "map" | "source" | null;
+ type TrackSource = "all" | ListeningTrack["source"];
+-type QrLogin = { image: string; loginId: string; expiresAt: number; status: "pending" | "scanned" | "expired" | "success" | "error"; message: string; nickname?: string };
++type QrLogin = { image: string; authorizeUrl?: string; loginId: string; expiresAt: number; status: "pending" | "scanned" | "authorizing" | "cancelled" | "expired" | "success" | "error"; message: string; nickname?: string };
+ type IconName = "play" | "pause" | "prev" | "next" | "queue" | "lyrics" | "music" | "search" | "close" | "heart" | "shuffle" | "repeat" | "volume" | "mute" | "upload" | "world" | "focus" | "refresh" | "arrow" | "headphones";
+ 
+ const BRIDGE_CONFIG = "APP_ORIGIN=http://127.0.0.1:3002\nRADIOHAND_API_ORIGIN=http://127.0.0.1:3000";
+@@ -57,6 +57,9 @@ export function MusicPlayer({ active, onChoose }: { active: boolean; onChoose: (
+   const searchRequest = useRef<AbortController | null>(null);
+   const initialRequest = useRef<AbortController | null>(null);
+   const loadedOnline = useRef(false);
++  const loginRequest = useRef<AbortController | null>(null);
++  const loginWindow = useRef<Window | null>(null);
++  const loginId = useRef<string | null>(null);
+   const lyricRequests = useRef(new Set<string>());
+   const [panel, setPanel] = useState<Panel>(null);
+   const [sourceFilter, setSourceFilter] = useState<TrackSource>("qqmusic");
+@@ -83,6 +86,18 @@ export function MusicPlayer({ active, onChoose }: { active: boolean; onChoose: (
+   const visibleTracks = player.tracks.filter((item) => sourceFilter === "all" || item.source === sourceFilter);
+   const suggestions = player.tracks.filter((item) => item.id !== current.id && item.source === (current.source === "qqmusic" ? "qqmusic" : "original")).slice(0, 3);
+ 
++  const cancelAuthorization = useCallback(() => {
++    loginRequest.current?.abort(); loginRequest.current = null;
++    loginWindow.current?.close(); loginWindow.current = null;
++    const id = loginId.current; loginId.current = null;
++    if (id) void cancelQqLogin(id).catch(() => {});
++  }, []);
++  const closeQqLogin = useCallback(() => { cancelAuthorization(); setQrLogin(null); setLoginBusy(false); }, [cancelAuthorization]);
++  useEffect(() => {
++    if (!active) cancelAuthorization();
++    return cancelAuthorization;
++  }, [active, cancelAuthorization]);
++
+   useEffect(() => {
+     if (!active || loadedOnline.current) return;
+     loadedOnline.current = true;
+@@ -127,7 +142,7 @@ export function MusicPlayer({ active, onChoose }: { active: boolean; onChoose: (
+   useEffect(() => {
+     if (!active) { searchRequest.current?.abort(); return; }
+     const onKey = (event: KeyboardEvent) => {
+-      if (event.code === "Escape") { if (qrLogin) setQrLogin(null); else { setPanel(null); setImmersive(false); } return; }
++      if (event.code === "Escape") { if (qrLogin) closeQqLogin(); else { setPanel(null); setImmersive(false); } return; }
+       const target = event.target;
+       if (target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName))) return;
+       if (panel === "map") return;
+@@ -140,7 +155,7 @@ export function MusicPlayer({ active, onChoose }: { active: boolean; onChoose: (
+     };
+     window.addEventListener("keydown", onKey);
+     return () => window.removeEventListener("keydown", onKey);
+-  }, [active, panel, player, qrLogin]);
++  }, [active, panel, player, qrLogin, closeQqLogin]);
+ 
+   async function runSearch(loadMore = false) {
+     const keywords = loadMore ? searchQuery : query.trim();
+@@ -171,12 +186,27 @@ export function MusicPlayer({ active, onChoose }: { active: boolean; onChoose: (
+   }
+ 
+   async function openQqLogin() {
++    closeQqLogin();
++    const popup = connection?.loginMode === "oauth" ? window.open("about:blank", "_blank", "popup=yes,width=720,height=620") : null;
++    loginWindow.current = popup;
++    if (popup) popup.opener = null;
++    const controller = new AbortController(); loginRequest.current = controller;
+     setPanel("source"); setLoginBusy(true);
+     try {
+-      const started = await startQqLogin();
+-      setQrLogin({ image: started.image, loginId: started.loginId, expiresAt: started.expiresAt, status: "pending", message: "请用手机 QQ 扫描二维码，并在手机上确认登录。" });
+-    } catch (cause) { player.report(cause instanceof Error ? cause.message : "暂时无法获取 QQ 登录二维码。"); }
+-    finally { setLoginBusy(false); }
++      const started = await startQqLogin(controller.signal);
++      if (controller.signal.aborted) return;
++      loginId.current = started.loginId;
++      if (started.authorizeUrl) {
++        const url = new URL(started.authorizeUrl);
++        if (url.protocol !== "https:" || url.hostname !== "graph.qq.com" || url.username || url.password || url.port || url.pathname !== "/oauth2.0/authorize") throw new Error("QQ 官方授权地址无效。");
++        if (popup) popup.location.replace(url.href);
++      }
++      setQrLogin({ image: started.image, authorizeUrl: started.authorizeUrl, loginId: started.loginId, expiresAt: started.expiresAt, status: "pending", message: started.message || "请用手机 QQ 扫描二维码，并在手机上确认登录。" });
++    } catch (cause) {
++      popup?.close();
++      if (!controller.signal.aborted) { closeQqLogin(); player.report(cause instanceof Error ? cause.message : "暂时无法获取 QQ 登录二维码。"); }
++    }
++    finally { if (loginRequest.current === controller) { loginRequest.current = null; setLoginBusy(false); } }
+   }
+ 
+   async function disconnectQqAccount() {
+@@ -184,7 +214,7 @@ export function MusicPlayer({ active, onChoose }: { active: boolean; onChoose: (
+     try {
+       await logoutQqLogin();
+       if (player.track.source === "qqmusic") player.pause();
+-      setQrLogin(null);
++      closeQqLogin();
+       setConnection({ configured: false, authorized: false, message: "已退出 QQ 音乐账号。" });
+       player.report("已退出 QQ 音乐账号。");
+     } catch (cause) { player.report(cause instanceof Error ? cause.message : "退出登录失败，请重试。"); }
+@@ -206,13 +236,14 @@ export function MusicPlayer({ active, onChoose }: { active: boolean; onChoose: (
+         if (stopped) return;
+         failures = 0;
+         if (result.status === "success") {
+-          setConnection({ configured: true, authorized: true, message: result.message, nickname: result.nickname, user: result.user });
++          setConnection({ configured: true, authorized: true, message: result.message, nickname: result.nickname, user: result.user, loginMode: qrLogin.authorizeUrl ? "oauth" : "qr", musicAuthorized: false });
++          loginId.current = null; loginWindow.current?.close(); loginWindow.current = null;
+           setQrLogin(null);
+-          player.report("QQ 音乐登录成功" + (result.user?.nickname ? " · " + result.user.nickname : ""));
++          player.report(result.message);
+           return;
+         }
+         setQrLogin((previous) => previous ? { ...previous, status: result.status, message: result.message, nickname: result.nickname } : previous);
+-        if (result.status === "expired" || result.status === "error") return;
++        if (["expired", "error", "cancelled"].includes(result.status)) return;
+       } catch {
+         if (stopped) return;
+         if (++failures >= 3) { setQrLogin(previous => previous ? { ...previous, status: "error", message: "登录连接暂时中断，请刷新二维码重试。" } : null); return; }
+@@ -363,12 +394,12 @@ export function MusicPlayer({ active, onChoose }: { active: boolean; onChoose: (
+     </div>
+     {player.notice && <p className="mw-listening-toast" role="status">{player.notice}</p>}
+     {dragging && <div className="mw-listening-drop" aria-hidden="true"><Icon name="upload" size={32} /><strong>把音乐放进这个世界</strong><span>支持音频文件和 LRC 歌词</span></div>}
+-    {qrLogin && <div className="mw-listening-qr-backdrop" role="dialog" aria-modal="true" aria-label="扫码登录 QQ 音乐">
++    {qrLogin && <div className="mw-listening-qr-backdrop" role="dialog" aria-modal="true" aria-label="扫码连接 QQ 账号">
+       <div className="mw-listening-qr-card">
+-        <div className="mw-listening-qr-head"><span>扫码登录 QQ 音乐</span><button type="button" onClick={() => setQrLogin(null)} aria-label="关闭扫码登录"><Icon name="close" size={17} /></button></div>
++        <div className="mw-listening-qr-head"><span>扫码连接 QQ 账号</span><button type="button" onClick={closeQqLogin} aria-label="关闭扫码登录"><Icon name="close" size={17} /></button></div>
+         {qrLogin.status === "success"
+           ? <div className="mw-listening-qr-image mw-listening-qr-done"><Icon name="headphones" size={38} /></div>
+-          : <div className="mw-listening-qr-image" style={{ backgroundImage: "url(" + qrLogin.image + ")" }} role="img" aria-label="QQ 音乐登录二维码" />}
++          : qrLogin.authorizeUrl ? <a className="mw-listening-login" href={qrLogin.authorizeUrl} target="_blank" rel="noopener noreferrer">打开 QQ 官方扫码授权页 ↗</a> : <div className="mw-listening-qr-image" style={{ backgroundImage: "url(" + qrLogin.image + ")" }} role="img" aria-label="QQ 音乐登录二维码" />}
+         <p className={"mw-listening-qr-status is-" + qrLogin.status}>{qrLogin.status === "success" ? "登录成功" + (qrLogin.nickname ? "：" + qrLogin.nickname : "") : qrLogin.message}</p>
+         <div className="mw-listening-qr-actions">
+           {qrLogin.status === "expired" || qrLogin.status === "error"
+@@ -424,11 +455,11 @@ export function MusicPlayer({ active, onChoose }: { active: boolean; onChoose: (
+       {panel === "source" && <div className="mw-listening-drawer-content mw-listening-source-pane">
+         <h2>音乐连接</h2><p className="mw-listening-drawer-intro">搜索、试听、播放状态，在这里一目了然。</p>
+         <div className="mw-listening-source-card"><span><Icon name="headphones" size={21} />QQ 音乐</span><strong>{connection?.authorized ? (connection.nickname ? "已连接 · " + connection.nickname : "已连接") : "播放待连接"}</strong><p>{connection?.message ?? "正在检查连接…"}</p></div>
+-        {connection?.authorized && connection.user && <div className="mw-listening-user-profile" aria-label="QQ 音乐用户信息"><span className="mw-listening-profile-avatar" style={connection.user.avatar ? { backgroundImage: "url(" + connection.user.avatar + ")" } : undefined}>{!connection.user.avatar && <Icon name="headphones" size={23} />}</span><div><strong>{connection.user.nickname}</strong><small>QQ 音乐 ID · {connection.user.id}</small><span>账号已连接{connection.profileAvailable === false ? " · 资料暂时无法刷新" : ""}</span></div></div>}
+-        <p>你现在可以搜索 QQ 音乐歌曲。用手机 QQ 扫码登录后，就能按账号的实际权益在这个页面里播放。</p>
++        {connection?.authorized && connection.user && <div className="mw-listening-user-profile" aria-label="QQ 账号信息"><span className="mw-listening-profile-avatar" style={connection.user.avatar ? { backgroundImage: "url(" + connection.user.avatar + ")" } : undefined}>{!connection.user.avatar && <Icon name="headphones" size={23} />}</span><div><strong>{connection.user.nickname}</strong><small>QQ OpenID · {connection.user.id}</small><span>账号已连接{connection.profileAvailable === false ? " · 资料暂时无法刷新" : ""}</span></div></div>}
++        <p>QQ 官方登录可获取昵称和头像。QQ 音乐的播放授权与账号权益需要由获授权的音乐服务确认。</p>
+         {connection?.authorized
+           ? <button type="button" className="mw-listening-logout" disabled={loginBusy} onClick={() => void disconnectQqAccount()}><Icon name="close" size={16} />退出登录 QQ 音乐</button>
+-          : <button type="button" className="mw-listening-login" disabled={loginBusy} onClick={() => void openQqLogin()}><Icon name="headphones" size={17} />{loginBusy ? "正在获取二维码…" : "扫码登录 QQ 音乐"}<span className="mw-listening-login-arrow">↗</span></button>}
++          : <button type="button" className="mw-listening-login" disabled={loginBusy || connection?.loginAvailable === false} onClick={() => void openQqLogin()}><Icon name="headphones" size={17} />{loginBusy ? "正在打开授权…" : "QQ 官方扫码登录"}<span className="mw-listening-login-arrow">↗</span></button>}
+         {!connection?.authorized && <details className="mw-listening-quickstart">
+           <summary>备用：连接本机 radiohand 服务 <span>3 步</span></summary>
+           <ol className="mw-listening-quickstart-steps">
+diff --git a/src/lib/music/platforms/login.ts b/src/lib/music/platforms/login.ts
+index e1cf767..daeb48f 100644
+--- a/src/lib/music/platforms/login.ts
++++ b/src/lib/music/platforms/login.ts
+@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
+ import path from "node:path";
+ import { randomUUID } from "node:crypto";
+ import { RequestError } from "@/lib/server/errors";
+-import { connectOfficialQqAccount, logoutQqAccount, qqAccountStatus } from "../providers/qq-account";
++import { logoutQqAccount, qqAccountStatus } from "../providers/qq-account";
++import { cancelQqOAuth, pollQqOAuth, startQqOAuth } from "../providers/qq-oauth";
+ import { desktopAvailable, electronPath, integrationRoot, platformCall } from "./runtime";
+ import { deleteAccount, readAccount, saveAccount } from "./accounts";
+ import { platformLabels, record, text, type Platform, type MusicProfile, type PlatformStatus, type Values } from "./types";
+@@ -30,7 +31,7 @@ export async function platformStatus(userId: string, provider: Platform, signal:
+   const base = { provider, loginMode, loginAvailable: provider === "netease" || desktopAvailable() } as const;
+   if (provider === "qq") {
+     const result = await qqAccountStatus(userId, signal);
+-    return { ...base, authorized: !!result?.authorized, user: result && "user" in result ? result.user : undefined, message: result?.message || "连接 QQ 音乐，读取昵称和可播放曲目。" };
++    return { ...result, provider, user: "user" in result ? result.user : undefined };
+   }
+   const account = readAccount(userId, provider);
+   if (!account) return { ...base, authorized: false, message: "连接账号后可按账号权益播放。" };
+@@ -52,8 +53,7 @@ async function complete(job: LoginJob, cookie: string) {
+     if (!cookie || cookie.length > 32768 || /[\r\n]/.test(cookie)) throw new Error("invalid");
+     const signal = AbortSignal.timeout(45000);
+     let profile: MusicProfile;
+-    if (job.provider === "qq") profile = await connectOfficialQqAccount(job.userId, cookie, signal, () => active(job));
+-    else {
++    {
+       const result = await platformCall(job.provider, "status", {}, cookie, signal);
+       if (result.loggedIn !== true || result.reauthRequired === true) throw new Error("expired");
+       profile = parsePlatformProfile(result);
+@@ -69,6 +69,7 @@ async function complete(job: LoginJob, cookie: string) {
+ }
+ 
+ export function cancelLogin(userId: string, provider: Platform, loginId?: string) {
++  if (provider === "qq") return cancelQqOAuth(userId, loginId);
+   const job = jobs().get(keyOf(userId, provider));
+   if (job && (!loginId || job.id === loginId)) { terminal(job, "cancelled", "登录已取消。"); jobs().delete(keyOf(userId, provider)); }
+   return { ok: true };
+@@ -79,6 +80,7 @@ export function logoutPlatform(userId: string, provider: Platform) {
+   return { ok: true };
+ }
+ export async function startPlatformLogin(userId: string, provider: Platform, request: Request) {
++  if (provider === "qq") return startQqOAuth(userId, request);
+   if (provider !== "netease") {
+     const host = (request.headers.get("host") || new URL(request.url).host).split(":")[0];
+     if (!["127.0.0.1", "localhost"].includes(host) || !desktopAvailable()) throw new RequestError(409, "此平台需要本机官方登录窗口，请在本机运行应用。", "DESKTOP_LOGIN_UNAVAILABLE");
+@@ -121,9 +123,10 @@ export async function startPlatformLogin(userId: string, provider: Platform, req
+   return publicLogin(job);
+ }
+ export async function pollPlatformLogin(userId: string, provider: Platform, id: string) {
++  if (provider === "qq") return pollQqOAuth(userId, id);
+   const job = jobs().get(keyOf(userId, provider));
+   if (!job || job.id !== id) throw new RequestError(404, "登录已失效，请重新连接。", "LOGIN_NOT_FOUND");
+-  if (job.expiresAt <= Date.now() && active(job)) terminal(job, "expired", "登录已过期，请重新连接。");
++  if (job.expiresAt <= Date.now() && ["pending", "scanned", "authorizing"].includes(job.status)) terminal(job, "expired", "登录已过期，请重新连接。");
+   if (provider === "netease" && job.key && active(job)) {
+     if (!job.polling) job.polling = (async () => {
+       const result = await platformCall(provider, "poll", { key: job.key });
+diff --git a/src/lib/music/platforms/types.ts b/src/lib/music/platforms/types.ts
+index b14bddf..268f8a0 100644
+--- a/src/lib/music/platforms/types.ts
++++ b/src/lib/music/platforms/types.ts
+@@ -4,8 +4,9 @@ export type Values = Record<string, unknown>;
+ export const record = (v: unknown): Values => v && typeof v === "object" && !Array.isArray(v) ? v as Values : {};
+ export const text = (v: unknown, max = 300) => (typeof v === "string" || typeof v === "number" ? String(v) : "").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, max);
+ export interface MusicProfile { id: string; nickname: string; avatar: string }
+-export interface PlatformAccount { cookie: string; profile: MusicProfile }
+-export interface PlatformStatus { provider: Platform; authorized: boolean; user?: MusicProfile; message: string; loginMode: "qr" | "window"; loginAvailable: boolean }
++export interface QqOAuthGrant { kind: "qq-connect"; appId: string; accessToken: string; refreshToken?: string; expiresAt: number }
++export interface PlatformAccount { cookie: string; profile: MusicProfile; oauth?: QqOAuthGrant }
++export interface PlatformStatus { provider: Platform; authorized: boolean; user?: MusicProfile; message: string; loginMode: "qr" | "window" | "oauth"; loginAvailable: boolean; musicAuthorized?: boolean }
+ export interface PlatformTrack { provider: Platform; id: string; playbackId: string; name: string; artist: string; album: string; albumId?: string; cover: string; duration: number; fee: number }
+ export interface PlayingIdentity {
+   provider?: Platform;
+diff --git a/src/lib/music/providers/qq-account.ts b/src/lib/music/providers/qq-account.ts
+index 406a2a5..b645ce3 100644
+--- a/src/lib/music/providers/qq-account.ts
++++ b/src/lib/music/providers/qq-account.ts
+@@ -1,402 +1,13 @@
+ import "server-only";
+-import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:crypto";
+-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+-import path from "node:path";
+-import { eq } from "drizzle-orm";
+-import { z } from "@/lib/validation";
+-import { RequestError } from "@/lib/server/errors";
+-import { getDatabase } from "@/db/connection";
+-import { qqAccounts } from "@/db/schema";
+-import { normalizeQqProfile, parseQqLoginCallback, qqCookieValues, qqMusicKey, trustedQqLoginUrl, type QqUserProfile } from "./qq-profile";
+-
+-// In-page QQ Music login. Credentials obtained from the official QR flow are
+-// sealed with AES-256-GCM and stored in the local SQLite database, so playback
+-// can request per-account vkeys without any external desktop service.
+-const midSchema = z.string().regex(/^[A-Za-z0-9]{1,64}$/);
+-const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+-const qqReferer = "https://y.qq.com/";
+-const loginU1 = "https://graph.qq.com/oauth2.0/login_jump";
+-const qqConnectParams = { response_type: "code", client_id: "100497308", redirect_uri: "https://y.qq.com/portal/wx_redirect.html?login_type=1&surl=https://y.qq.com/", scope: "get_user_info", state: "state" };
+-const qqConnectReferer = "https://graph.qq.com/oauth2.0/show?" + new URLSearchParams({ which: "Login", display: "pc", ...qqConnectParams });
+-const musicuEndpoint = "https://u.y.qq.com/cgi-bin/musicu.fcg";
+-const qrTimeoutMs = 180_000;
+-const audioHost = /(^|\.)stream\.qqmusic\.qq\.com$/;
+-
+-type RecordValue = Record<string, unknown>;
+-const record = (value: unknown): RecordValue => value && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : {};
++import { logoutQqOAuth, pollQqOAuth, qqOAuthStatus, startQqOAuth } from "./qq-oauth";
+ 
++// Preserve callers while removing the borrowed QQ Music app and Cookie exchange.
+ export interface QqAccount { uin: string; nickname: string; avatar?: string; guid: string; cookie: string }
+-export interface QqLoginState { provider: "qq"; status: "pending" | "scanned" | "expired" | "success" | "error"; message: string; nickname?: string; user?: QqUserProfile }
+ export interface QqPlayback { playable: boolean; url: string; quality: string; trial: boolean; reason: string; message: string }
++export function qqAccountCredentials(userId: string): QqAccount | null { void userId; return null; }
++export function qqAccountResolve(...request: [string, string, string, AbortSignal]): Promise<QqPlayback | null> { void request; return Promise.resolve(null); }
++export const qqAccountStatus = qqOAuthStatus;
++export const logoutQqAccount = logoutQqOAuth;
++export function startQqLogin(userId: string, signal: AbortSignal, request?: Request) { signal.throwIfAborted(); return startQqOAuth(userId, request); }
++export function pollQqLogin(userId: string, signal: AbortSignal, id?: string) { signal.throwIfAborted(); return Promise.resolve(pollQqOAuth(userId, id)); }
+ 
+-interface PendingQr { id: string; qrsig: string; ptqrtoken: number; startedAt: number; completion?: Promise<QqLoginState> }
+-
+-interface ProfileResult { user: QqUserProfile; expired: boolean; available: boolean }
+-
+-const runtime = globalThis as typeof globalThis & {
+-  __musicWorldQqLogin?: Map<string, PendingQr>;
+-  __musicWorldQqVaultKey?: Buffer;
+-  __musicWorldQqProfiles?: Map<string, { credentials: string; expires: number; result: ProfileResult }>;
+-};
+-const pendingQr = () => runtime.__musicWorldQqLogin ??= new Map<string, PendingQr>();
+-
+-function vaultKey() {
+-  if (runtime.__musicWorldQqVaultKey) return runtime.__musicWorldQqVaultKey;
+-  const secret = process.env.QQ_CREDENTIAL_SECRET?.trim();
+-  if (secret) return runtime.__musicWorldQqVaultKey = scryptSync(secret, "music-world-qq-vault", 32);
+-  const database = process.env.DATABASE_PATH ?? "./data/music-world.db";
+-  const file = path.join(path.dirname(path.resolve(/* turbopackIgnore: true */ database)), ".qq-vault-key");
+-  try {
+-    if (existsSync(file)) return runtime.__musicWorldQqVaultKey = Buffer.from(readFileSync(file, "utf8").trim(), "base64");
+-    mkdirSync(path.dirname(file), { recursive: true });
+-    const key = randomBytes(32);
+-    writeFileSync(file, key.toString("base64"), { mode: 0o600 });
+-    return runtime.__musicWorldQqVaultKey = key;
+-  } catch { throw new RequestError(500, "无法初始化本地凭证存储。", "QQ_VAULT_UNAVAILABLE"); }
+-}
+-
+-function seal(account: QqAccount) {
+-  const iv = randomBytes(12);
+-  const cipher = createCipheriv("aes-256-gcm", vaultKey(), iv);
+-  const data = Buffer.concat([cipher.update(JSON.stringify(account), "utf8"), cipher.final()]);
+-  return [iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), data.toString("base64url")].join(".");
+-}
+-
+-function unseal(payload: string): QqAccount | null {
+-  try {
+-    const [iv, tag, data] = payload.split(".");
+-    if (!iv || !tag || !data) return null;
+-    const decipher = createDecipheriv("aes-256-gcm", vaultKey(), Buffer.from(iv, "base64url"));
+-    decipher.setAuthTag(Buffer.from(tag, "base64url"));
+-    const plain = Buffer.concat([decipher.update(Buffer.from(data, "base64url")), decipher.final()]).toString("utf8");
+-    const parsed = JSON.parse(plain) as Partial<QqAccount>;
+-    return { uin: String(parsed.uin ?? ""), nickname: String(parsed.nickname ?? ""), avatar: String(parsed.avatar ?? ""), guid: String(parsed.guid ?? ""), cookie: String(parsed.cookie ?? "") };
+-  } catch { return null; }
+-}
+-
+-function hash33(value: string) { let hash = 0; for (let index = 0; index < value.length; ++index) hash += (hash << 5) + value.charCodeAt(index); return 2147483647 & hash; }
+-function gtkOf(pSkey: string) { let hash = 5381; for (let index = 0; index < pSkey.length; ++index) hash += (hash << 5) + pSkey.charCodeAt(index); return hash & 0x7fffffff; }
+-function randomGuid() {
+-  return "xxxxxxxx4xxxyxxxxxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+-    const value = Math.random() * 16 | 0;
+-    return (character === "x" ? value : (value & 0x3) | 0x8).toString(16);
+-  }).toUpperCase();
+-}
+-// The vkey endpoint expects a numeric guid (same formula as the official web
+-// client), not the UUID used for the authorize `ui` parameter.
+-function numericGuid() {
+-  return String((Math.round(2147483647 * Math.random()) * new Date().getUTCMilliseconds()) % 1e10);
+-}
+-
+-function setCookieLines(response: Response) {
+-  const split = (line: string) => line.split(/,(?=\s*[A-Za-z0-9_-]+=)/);
+-  if (typeof response.headers.getSetCookie === "function") {
+-    const lines = response.headers.getSetCookie();
+-    // A proxy or upstream can join several cookies into one header even when
+-    // getSetCookie() exists. Normalize every line, including Expires dates.
+-    if (lines.length) return lines.flatMap(split);
+-  }
+-  // Fallback for runtimes without getSetCookie(): split the combined header on
+-  // commas that start a new `name=` pair (Expires dates contain commas too).
+-  const combined = response.headers.get("set-cookie");
+-  return combined ? split(combined) : [];
+-}
+-function mergeCookies(jar: Record<string, string>, lines: string[]) {
+-  for (const line of lines) {
+-    const pair = line.split(";")[0].trim();
+-    const index = pair.indexOf("=");
+-    if (index > 0) jar[pair.slice(0, index).trim()] = pair.slice(index + 1).trim();
+-  }
+-}
+-function cookieHeader(jar: Record<string, string>) { return Object.entries(jar).map(([key, value]) => key + "=" + value).join("; "); }
+-const diagnosticCookieName = (name: string) => name.replace(/_\d+$/, "_*");
+-
+-export function qqAccountCredentials(userId: string) {
+-  const row = getDatabase().db.select().from(qqAccounts).where(eq(qqAccounts.userId, userId)).get();
+-  const account = row ? unseal(row.credentials) : null;
+-  return account && account.uin && qqMusicKey(account.cookie) ? account : null;
+-}
+-
+-async function fetchQqProfile(account: QqAccount, signal: AbortSignal): Promise<ProfileResult> {
+-  const fallback = normalizeQqProfile({}, { id: account.uin, nickname: account.nickname, avatar: account.avatar ?? "" });
+-  const cookies = qqCookieValues(account.cookie);
+-  const url = new URL("https://c.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg");
+-  for (const [key, value] of Object.entries({ cid: "205360838", userid: account.uin, loginUin: account.uin, hostUin: "0", reqfrom: "1", g_tk: String(gtkOf(qqMusicKey(account.cookie) || cookies.p_skey || cookies.skey || "")), format: "json", inCharset: "utf8", outCharset: "utf-8", platform: "yqq.json", needNewCode: "0" })) url.searchParams.set(key, value);
+-  try {
+-    const response = await fetch(url, { headers: { Cookie: account.cookie, Referer: qqReferer, "User-Agent": userAgent }, redirect: "error", cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(6500)]) });
+-    if (!response.ok) return { user: fallback, expired: false, available: false };
+-    const raw = (await response.text()).slice(0, 256 * 1024);
+-    const value = record(JSON.parse(raw));
+-    if ([1000, 301].includes(Number(value.code)) || Number(value.result) === 301) return { user: fallback, expired: true, available: true };
+-    if (Number(value.code ?? 0) !== 0) return { user: fallback, expired: false, available: false };
+-    return { user: normalizeQqProfile(value, fallback), expired: false, available: true };
+-  } catch { return { user: fallback, expired: false, available: false }; }
+-}
+-
+-export async function qqAccountStatus(userId: string, signal: AbortSignal, refresh = false) {
+-  const row = getDatabase().db.select().from(qqAccounts).where(eq(qqAccounts.userId, userId)).get();
+-  if (!row) return null;
+-  const account = unseal(row.credentials);
+-  if (!account?.uin || !qqMusicKey(account.cookie)) return { provider: "qq" as const, configured: true, authorized: false, message: "QQ 音乐登录凭证已失效，请重新扫码登录。" };
+-  const cache = runtime.__musicWorldQqProfiles ??= new Map();
+-  for (const [id, entry] of cache) if (entry.expires <= Date.now()) cache.delete(id);
+-  const previous = cache.get(userId);
+-  const profile = !refresh && previous?.credentials === row.credentials ? previous.result : await fetchQqProfile(account, signal);
+-  if (signal.aborted) throw signal.reason;
+-  if (profile.available && !profile.expired && (profile.user.nickname !== account.nickname || profile.user.avatar !== account.avatar)) {
+-    account.nickname = profile.user.nickname; account.avatar = profile.user.avatar;
+-    const credentials = seal(account);
+-    getDatabase().db.update(qqAccounts).set({ nickname: account.nickname, credentials }).where(eq(qqAccounts.userId, userId)).run();
+-    cache.set(userId, { credentials, expires: Date.now() + 60_000, result: profile });
+-  } else cache.set(userId, { credentials: row.credentials, expires: Date.now() + 60_000, result: profile });
+-  if (profile.expired) return { provider: "qq" as const, configured: true, authorized: false, message: "QQ 音乐登录已过期，请重新扫码。" };
+-  return {
+-    provider: "qq" as const, configured: true, authorized: true, nickname: profile.user.nickname, user: profile.user,
+-    profileAvailable: profile.available,
+-    message: profile.available ? "QQ 音乐已登录：" + profile.user.nickname : "QQ 音乐登录已保存，用户信息暂时无法刷新。",
+-  };
+-}
+-
+-export function logoutQqAccount(userId: string) {
+-  getDatabase().db.delete(qqAccounts).where(eq(qqAccounts.userId, userId)).run();
+-  pendingQr().delete(userId);
+-  runtime.__musicWorldQqProfiles?.delete(userId);
+-  return { provider: "qq", ok: true, message: "已退出 QQ 音乐账号。" };
+-}
+-
+-/** The local official login window returns the music session, never a generic QQ ticket. */
+-export async function connectOfficialQqAccount(userId: string, cookie: string, signal: AbortSignal, shouldSave: () => boolean) {
+-  if (cookie.length > 32768 || /[\r\n]/.test(cookie)) throw new RequestError(400, "QQ 音乐授权数据无效。", "QQ_COOKIE_INVALID");
+-  const values = qqCookieValues(cookie);
+-  const uin = (values.qqmusic_uin || values.uin || values.wxuin || "").replace(/^o0*/, "");
+-  if (!/^\d{1,20}$/.test(uin) || !qqMusicKey(cookie)) throw new RequestError(400, "QQ 账号已确认，音乐播放授权尚未完成。", "QQ_PLAYBACK_AUTH_INCOMPLETE");
+-  const fallback = normalizeQqProfile({}, { id: uin, nickname: values.qqmusic_nickname || values.wxnick || "", avatar: values.qqmusic_headurl || "" });
+-  const account: QqAccount = { uin, cookie, guid: numericGuid(), nickname: fallback.nickname, avatar: fallback.avatar };
+-  const profile = await fetchQqProfile(account, signal);
+-  if (profile.expired) throw new RequestError(401, "QQ 音乐授权已过期，请重新登录。", "QQ_AUTH_EXPIRED");
+-  if (!shouldSave()) throw new RequestError(409, "本次登录已取消。", "LOGIN_CANCELLED");
+-  account.nickname = profile.user.nickname; account.avatar = profile.user.avatar;
+-  const credentials = seal(account);
+-  getDatabase().db.insert(qqAccounts).values({ userId, nickname: account.nickname, uin, guid: account.guid, credentials, updatedAt: new Date() })
+-    .onConflictDoUpdate({ target: qqAccounts.userId, set: { nickname: account.nickname, uin, guid: account.guid, credentials, updatedAt: new Date() } }).run();
+-  runtime.__musicWorldQqProfiles?.delete(userId);
+-  return profile.user;
+-}
+-
+-export async function startQqLogin(userId: string, signal: AbortSignal) {
+-  for (const [id, entry] of pendingQr()) if (Date.now() - entry.startedAt > qrTimeoutMs) pendingQr().delete(id);
+-  if (pendingQr().size >= 500 && !pendingQr().has(userId)) throw new RequestError(429, "登录请求较多，请稍后重试。", "QQ_LOGIN_BUSY");
+-  const url = new URL("https://ssl.ptlogin2.qq.com/ptqrshow");
+-  const params = { appid: "716027609", e: "2", l: "M", s: "3", d: "72", v: "4", t: String(Math.random()), daid: "383", pt_3rd_aid: "100497308", u1: loginU1 };
+-  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+-  let response: Response;
+-  try {
+-    response = await fetch(url, { headers: { Referer: "https://xui.ptlogin2.qq.com/", "User-Agent": userAgent }, cache: "no-store", redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]) });
+-  } catch { throw new RequestError(502, "暂时无法获取 QQ 登录二维码，请稍后重试。", "QQ_QR_UNAVAILABLE"); }
+-  if (!response.ok) throw new RequestError(502, "暂时无法获取 QQ 登录二维码，请稍后重试。", "QQ_QR_UNAVAILABLE");
+-  const image = "data:image/png;base64," + Buffer.from(await response.arrayBuffer()).toString("base64");
+-  let qrsig = "";
+-  for (const line of setCookieLines(response)) { const matched = line.match(/(?:^|;\s*)qrsig=([^;]+)/); if (matched) { qrsig = matched[1]; break; } }
+-  if (!qrsig) throw new RequestError(502, "QQ 登录二维码无效，请重试。", "QQ_QR_INVALID");
+-  const entry = { id: randomBytes(16).toString("hex"), qrsig, ptqrtoken: hash33(qrsig), startedAt: Date.now() };
+-  pendingQr().set(userId, entry);
+-  console.info("[qq-login] QR issued", { flow: "qq-connect-4" });
+-  return { provider: "qq" as const, image, loginId: entry.id, expiresAt: entry.startedAt + qrTimeoutMs, expiresIn: qrTimeoutMs, flowVersion: "qq-connect-4" };
+-}
+-
+-export async function pollQqLogin(userId: string, signal: AbortSignal, loginId?: string): Promise<QqLoginState> {
+-  const entry = pendingQr().get(userId);
+-  if (!entry) throw new RequestError(409, "二维码已失效，请重新获取。", "QQ_QR_MISSING");
+-  if (loginId && entry.id !== loginId) throw new RequestError(409, "二维码已刷新，请扫描当前二维码。", "QQ_QR_REPLACED");
+-  if (entry.completion) return entry.completion;
+-  if (Date.now() - entry.startedAt > qrTimeoutMs) {
+-    pendingQr().delete(userId);
+-    return { provider: "qq", status: "expired", message: "二维码已过期，请刷新后重新扫码。" };
+-  }
+-  const url = new URL("https://ssl.ptlogin2.qq.com/ptqrlogin");
+-  const params = { u1: loginU1, ptqrtoken: String(entry.ptqrtoken), ptredirect: "0", h: "1", t: "1", g: "1", from_ui: "1", ptlang: "2052", action: "0-0-" + Date.now(), js_ver: "23111510", js_type: "1", login_sig: "", pt_uistyle: "40", aid: "716027609", daid: "383", pt_3rd_aid: "100497308" };
+-  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+-  let body = "";
+-  let upstreamStatus = 0;
+-  const seedCookies: string[] = [];
+-  try {
+-    const response = await fetch(url, { headers: { Cookie: "qrsig=" + entry.qrsig, Referer: "https://xui.ptlogin2.qq.com/", "User-Agent": userAgent }, cache: "no-store", redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]) });
+-    upstreamStatus = response.status;
+-    seedCookies.push(...setCookieLines(response));
+-    body = (await response.text()).slice(0, 8192);
+-  } catch { return { provider: "qq", status: "pending", message: "正在等待扫码结果…" }; }
+-  const callback = parseQqLoginCallback(body);
+-  const code = callback?.code ?? "";
+-  if (code === "65" || body.includes("已失效")) {
+-    pendingQr().delete(userId);
+-    return { provider: "qq", status: "expired", message: "二维码已过期，请刷新后重新扫码。" };
+-  }
+-  if (code === "67") return { provider: "qq", status: "scanned", message: "已扫码，请在手机上确认登录。" };
+-  if (code === "66") return { provider: "qq", status: "pending", message: "请用手机 QQ 扫描二维码。" };
+-  if (code !== "0") {
+-    console.warn("[qq-login] QR confirmation incomplete", { upstreamStatus, platformCode: code || "unparsed" });
+-    return { provider: "qq", status: "error", message: "QQ 扫码登录未完成，请刷新二维码重试。" };
+-  }
+-  if (entry.completion) return entry.completion;
+-  if (pendingQr().get(userId) !== entry) return { provider: "qq", status: "error", message: "二维码已刷新，请扫描当前二维码。" };
+-  entry.completion = (async (): Promise<QqLoginState> => { try {
+-    const account = await completeQqLogin(body, seedCookies, signal);
+-    if (pendingQr().get(userId) !== entry) return { provider: "qq", status: "error", message: "二维码已更新，请重新扫码。" };
+-    const credentials = seal(account);
+-    getDatabase().db.insert(qqAccounts).values({ userId, nickname: account.nickname, uin: account.uin, guid: account.guid, credentials, updatedAt: new Date() })
+-      .onConflictDoUpdate({ target: qqAccounts.userId, set: { nickname: account.nickname, uin: account.uin, guid: account.guid, credentials, updatedAt: new Date() } }).run();
+-    console.info("[qq-login] QQ Music account connected", { hasNickname: Boolean(account.nickname), hasAvatar: Boolean(account.avatar) });
+-    runtime.__musicWorldQqProfiles?.delete(userId);
+-    return { provider: "qq", status: "success", message: "QQ 音乐登录成功。", nickname: account.nickname, user: normalizeQqProfile({}, { id: account.uin, nickname: account.nickname, avatar: account.avatar ?? "" }) };
+-  } catch (error) {
+-    console.warn("[qq-login] authorization failed", { code: error instanceof RequestError ? error.code : "QQ_LOGIN_UNKNOWN" });
+-    return { provider: "qq", status: "error", message: error instanceof RequestError ? error.message : "登录未能完成，请重试。" };
+-  } finally { if (pendingQr().get(userId) === entry) pendingQr().delete(userId); } })();
+-  return entry.completion;
+-}
+-
+-async function completeQqLogin(callback: string, seedCookies: string[], signal: AbortSignal): Promise<QqAccount> {
+-  const sig = AbortSignal.any([signal, AbortSignal.timeout(15000)]);
+-  const details = parseQqLoginCallback(callback);
+-  const callbackUrl = details && trustedQqLoginUrl(details.callbackUrl);
+-  if (!callbackUrl) throw new RequestError(502, "QQ 登录回调地址无效。", "QQ_LOGIN_CALLBACK_INVALID");
+-  const qqUin = callbackUrl.searchParams.get("uin") ?? "";
+-  const signature = callbackUrl.searchParams.get("ptsigx") ?? "";
+-  if (callbackUrl.pathname !== "/check_sig" || !/^\d{1,20}$/.test(qqUin) || !signature || signature.length > 2048) {
+-    throw new RequestError(502, "QQ 登录回调缺少授权信息，请刷新二维码重新扫码。", "QQ_LOGIN_CALLBACK_INCOMPLETE");
+-  }
+-  // The QR callback can target a generic ptlogin host. QQ Connect requires
+-  // exchanging that ticket on the graph-scoped host for authorization cookies.
+-  const checkSigUrl = new URL("https://ssl.ptlogin2.graph.qq.com/check_sig");
+-  for (const [key, value] of Object.entries({
+-    uin: qqUin, pttype: "1", service: "ptqrlogin", nodirect: "0", ptsigx: signature,
+-    s_url: loginU1, ptlang: "2052", ptredirect: "100", aid: "716027609", daid: "383",
+-    j_later: "0", low_login_hour: "0", regmaster: "0", pt_login_type: "3", pt_aid: "0",
+-    pt_aaid: "16", pt_light: "0", pt_3rd_aid: "100497308",
+-  })) checkSigUrl.searchParams.set(key, value);
+-  const jar: Record<string, string> = {};
+-  mergeCookies(jar, seedCookies);
+-  // Mirror a browser: replay the cookies from ptqrlogin while exchanging for
+-  // the login ticket.
+-  const warmHeaders = (): Record<string, string> => {
+-    const headers: Record<string, string> = { Referer: "https://xui.ptlogin2.qq.com/", "User-Agent": userAgent };
+-    const cookie = cookieHeader(jar);
+-    if (cookie) headers.Cookie = cookie;
+-    return headers;
+-  };
+-  let destination: URL | null = checkSigUrl;
+-  const hops: { host: string; status: number; cookieNames: string[] }[] = [];
+-  for (let index = 0; index < 5 && destination; index++) {
+-    const response: Response = await fetch(destination, { redirect: "manual", headers: warmHeaders(), cache: "no-store", signal: sig });
+-    const cookies = setCookieLines(response);
+-    mergeCookies(jar, cookies);
+-    hops.push({ host: destination.hostname, status: response.status, cookieNames: cookies.map(line => diagnosticCookieName(line.split("=", 1)[0].trim())) });
+-    if (response.status >= 400) throw new RequestError(502, "QQ 互联授权服务暂时不可用，请稍后重新扫码。", "QQ_LOGIN_EXCHANGE_UNAVAILABLE");
+-    const location: string | null = response.headers.get("location");
+-    destination = location && [301, 302, 303, 307, 308].includes(response.status) ? trustedQqLoginUrl(location, destination.href) : null;
+-    if (location && !destination) throw new RequestError(502, "QQ 授权跳转地址无效，请重新扫码。", "QQ_LOGIN_REDIRECT_INVALID");
+-  }
+-  // Current QQ accounts can have p_skey_forbid and an empty p_skey while
+-  // receiving pt_oauth_token. The official Q.getToken() uses p_skey || "",
+-  // yielding 5381 in this case; the authorization endpoint validates the jar.
+-  // A music account is accepted only after QQLogin returns its music key.
+-  const pSkey = jar.p_skey || "";
+-  const credentialMode = pSkey ? "legacy" : jar.pt_oauth_token ? "oauth-token" : "web-session";
+-  console.info("[qq-login] exchanging QQ Connect authorization", { credentialMode });
+-  const authorize = new URLSearchParams();
+-  // Match the official authorization page's current nickname/avatar permission
+-  // and browser origin. The removed friends permission is not needed here.
+-  const authorizeParams = { ...qqConnectParams, switch: "", from_ptlogin: "1", src: "1", update_auth: "1", openapi: "1010", g_tk: String(gtkOf(pSkey)), auth_time: String(Date.now()), ui: randomGuid() };
+-  for (const [key, value] of Object.entries(authorizeParams)) authorize.set(key, value);
+-  const authorized = await fetch("https://graph.qq.com/oauth2.0/authorize", { method: "POST", body: authorize, redirect: "manual", headers: { Cookie: cookieHeader(jar), Referer: qqConnectReferer, Origin: "https://graph.qq.com", "User-Agent": userAgent }, cache: "no-store", signal: sig });
+-  mergeCookies(jar, setCookieLines(authorized));
+-  const authorizationRedirect = trustedQqLoginUrl(authorized.headers.get("location") ?? "", "https://graph.qq.com/");
+-  const code = authorizationRedirect?.searchParams.get("code");
+-  if (!code) {
+-    const redirectPath = authorizationRedirect?.pathname;
+-    const knownPath = ["/oauth2.0/show", "/oauth2.0/login_jump", "/portal/wx_redirect.html"].includes(redirectPath ?? "") ? redirectPath : "other";
+-    const upstreamError = authorizationRedirect?.searchParams.get("error_code") ?? authorizationRedirect?.searchParams.get("error");
+-    console.warn("[qq-login] QQ Connect authorization code missing", { status: authorized.status, credentialMode, hops, cookieNames: Object.keys(jar).map(diagnosticCookieName).sort(), redirect: { host: authorizationRedirect?.hostname, path: knownPath, parameterNames: authorizationRedirect ? [...authorizationRedirect.searchParams.keys()].map(diagnosticCookieName) : [], errorCode: upstreamError && /^\d{1,12}$/.test(upstreamError) ? upstreamError : undefined } });
+-    throw new RequestError(502, "QQ 账号已确认，但 QQ 音乐授权未完成，请重新扫码确认。", "QQ_LOGIN_CODE_MISSING");
+-  }
+-  const login = await fetch(musicuEndpoint, {
+-    method: "POST", headers: { "Content-Type": "application/json", Referer: qqReferer, "User-Agent": userAgent, Cookie: cookieHeader(jar) },
+-    body: JSON.stringify({ comm: { g_tk: gtkOf(pSkey), platform: "yqq", ct: 24, cv: 0, tmeLoginType: 2 }, req: { module: "QQConnectLogin.LoginServer", method: "QQLogin", param: { code } } }),
+-    redirect: "error", cache: "no-store", signal: sig,
+-  });
+-  if (!login.ok) throw new RequestError(502, "QQ 音乐登录接口暂时不可用。", "QQ_LOGIN_UPSTREAM_FAILED");
+-  mergeCookies(jar, setCookieLines(login));
+-  let parsed: RecordValue = {};
+-  try { parsed = record(await login.json()); } catch { parsed = {}; }
+-  const data = record(record(parsed.req).data);
+-  if (Number(parsed.code ?? 0) !== 0 || Number(record(parsed.req).code ?? 0) !== 0) {
+-    console.warn("[qq-login] QQ Music grant rejected", { platformCode: Number(record(parsed.req).code ?? parsed.code ?? 0) });
+-    throw new RequestError(502, "QQ 音乐授权未完成，请重新扫码确认。", "QQ_MUSIC_AUTH_REJECTED");
+-  }
+-  // A QQ identity alone does not prove that QQ Music authorization completed.
+-  const uin = String(data.musicid ?? jar.qqmusic_uin ?? data.uin ?? jar.uin ?? "").replace(/\D/g, "");
+-  if (!uin) throw new RequestError(502, "QQ 音乐登录未返回账号信息，请重试。", "QQ_LOGIN_UIN_MISSING");
+-  jar.uin = uin; jar.qqmusic_uin = uin;
+-  const musicKey = String(jar.qm_keyst ?? jar.qqmusic_key ?? data.musickey ?? "").trim();
+-  if (!musicKey) throw new RequestError(502, "QQ 账号已确认，但 QQ 音乐授权尚未完成，请重新扫码。", "QQ_MUSIC_KEY_MISSING");
+-  if (musicKey) { jar.qm_keyst = musicKey; jar.qqmusic_key = musicKey; }
+-  const user = normalizeQqProfile({ data }, { id: uin, nickname: details?.nickname ?? "", avatar: "" });
+-  const account: QqAccount = { uin, nickname: user.nickname, avatar: user.avatar, guid: numericGuid(), cookie: cookieHeader(jar) };
+-  const profile = await fetchQqProfile(account, signal);
+-  if (profile.expired) throw new RequestError(502, "QQ 音乐授权已失效，请刷新二维码重试。", "QQ_LOGIN_EXPIRED");
+-  return { ...account, nickname: profile.user.nickname, avatar: profile.user.avatar };
+-}
+-
+-function allowedAudioUrl(value: string) {
+-  try {
+-    const url = new URL(value);
+-    if (url.protocol !== "https:" || url.port || url.username || url.password || url.hash || !audioHost.test(url.hostname)) throw new Error("Invalid audio host");
+-    return url.href;
+-  } catch { throw new RequestError(502, "QQ 音乐返回了不支持的播放地址。", "UNSUPPORTED_AUDIO_SOURCE"); }
+-}
+-
+-async function requestVkey(account: QqAccount, songMid: string, mediaMid: string, fileName: string, signal: AbortSignal) {
+-  const param: RecordValue = { guid: account.guid || "10000", songmid: [songMid], songtype: [0], uin: account.uin, loginflag: 1, platform: "20" };
+-  if (fileName) param.filename = [fileName];
+-  const response = await fetch(musicuEndpoint, {
+-    method: "POST", headers: { "Content-Type": "application/json", Referer: qqReferer, "User-Agent": userAgent, Cookie: account.cookie },
+-    body: JSON.stringify({ comm: { uin: account.uin, format: "json", ct: 24, cv: 0 }, req_0: { module: "vkey.GetVkeyServer", method: "CgiGetVkey", param } }),
+-    redirect: "error", cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(12000)]),
+-  });
+-  if (!response.ok) return { purl: "", sip: "" };
+-  let parsed: RecordValue = {};
+-  try { parsed = record(await response.json()); } catch { return { purl: "", sip: "" }; }
+-  const data = record(record(parsed.req_0).data);
+-  const info = Array.isArray(data.midurlinfo) ? record(data.midurlinfo[0]) : {};
+-  const sipList = (Array.isArray(data.sip) ? data.sip : []).filter((item): item is string => typeof item === "string");
+-  // The official client skips the `http://ws` CDN host, which blocks direct
+-  // browser playback.
+-  const sip = sipList.find((item) => !item.startsWith("http://ws")) ?? sipList[0] ?? "";
+-  return { purl: typeof info.purl === "string" ? info.purl : "", sip };
+-}
+-
+-export async function qqAccountResolve(userId: string, mid: string, mediaMid: string, signal: AbortSignal): Promise<QqPlayback | null> {
+-  const row = getDatabase().db.select({ credentials: qqAccounts.credentials })
+-    .from(qqAccounts).where(eq(qqAccounts.userId, userId)).get();
+-  if (!row) return null;
+-  const account = unseal(row.credentials);
+-  if (!account?.cookie || !account.uin) {
+-    getDatabase().db.delete(qqAccounts).where(eq(qqAccounts.userId, userId)).run();
+-    return null;
+-  }
+-  const songMid = midSchema.parse(mid);
+-  if (mediaMid) midSchema.parse(mediaMid);
+-  // Match the official filename rule: M500{songmid}{mediaId || songmid}.mp3,
+-  // then the m4a variant, then a bare request as a last resort.
+-  const media = mediaMid || songMid;
+-  const candidates = ["M500" + songMid + media + ".mp3", "C400" + songMid + media + ".m4a", ""];
+-  for (const fileName of candidates) {
+-    const { purl, sip } = await requestVkey(account, songMid, mediaMid, fileName, signal);
+-    console.info("[qq-login] vkey file=" + (fileName || "(default)") + " hasPurl=" + Boolean(purl) + " sip=" + (sip ? new URL(sip).hostname : ""));
+-    if (!purl) continue;
+-    const base = (sip || "https://isure.stream.qqmusic.qq.com/").replace(/^http:/, "https:");
+-    const url = allowedAudioUrl(new URL(purl, base.endsWith("/") ? base : base + "/").href);
+-    return { playable: true, url, quality: "标准音质", trial: false, reason: "", message: "" };
+-  }
+-  return { playable: false, url: "", quality: "", trial: false, reason: "QQ_PLAYBACK_RESTRICTED", message: "这首歌暂时无法按当前账号权益播放，可在 QQ 音乐中查看。" };
+-}
+diff --git a/src/lib/music/providers/qq-profile.ts b/src/lib/music/providers/qq-profile.ts
+index d1f777d..a432cdd 100644
+--- a/src/lib/music/providers/qq-profile.ts
++++ b/src/lib/music/providers/qq-profile.ts
+@@ -49,7 +49,7 @@ export function normalizeQqProfile(payload: unknown, fallback: QqUserProfile): Q
+     // The authenticated account is authoritative; a profile cannot switch its identity.
+     id: fallback.id,
+     nickname: nickname(creator.nick ?? creator.nickname ?? creator.name) || nickname(fallback.nickname) || "QQ 音乐用户",
+-    avatar: avatar(creator.headpic ?? creator.avatar ?? creator.avatarUrl ?? creator.logo) || avatar(fallback.avatar),
++    avatar: avatar(creator.figureurl_qq_2 || creator.figureurl_qq_1 || creator.headpic || creator.avatar || creator.avatarUrl || creator.logo) || avatar(fallback.avatar),
+   };
+ }
+ 
+diff --git a/src/lib/music/providers/radiohand-browser.ts b/src/lib/music/providers/radiohand-browser.ts
+index 438b156..aab66e0 100644
+--- a/src/lib/music/providers/radiohand-browser.ts
++++ b/src/lib/music/providers/radiohand-browser.ts
+@@ -2,7 +2,7 @@ import { parseLyrics, type ListeningTrack } from "@/components/player/player-lib
+ import type { RadiohandSong } from "./radiohand-qq";
+ import type { QqUserProfile } from "./qq-profile";
+ 
+-export interface ListeningConnection { configured: boolean; authorized: boolean; message: string; nickname?: string; user?: QqUserProfile; profileAvailable?: boolean }
++export interface ListeningConnection { configured: boolean; authorized: boolean; message: string; nickname?: string; user?: QqUserProfile; profileAvailable?: boolean; loginAvailable?: boolean; loginMode?: "qr" | "oauth"; musicAuthorized?: boolean }
+ 
+ let sessionReady: Promise<void> | null = null;
+ function ensureSession() {
+@@ -14,10 +14,10 @@ function ensureSession() {
+   return sessionReady;
+ }
+ 
+-async function responseJson<T>(path: string, signal?: AbortSignal, method = "GET"): Promise<T> {
++async function responseJson<T>(path: string, signal?: AbortSignal, method = "GET", body?: unknown): Promise<T> {
+   await ensureSession();
+   signal?.throwIfAborted();
+-  const response = await fetch(path, { method, headers: { "X-Music-World": "1" }, cache: "no-store", signal });
++  const response = await fetch(path, { method, headers: { "X-Music-World": "1", ...(body === undefined ? {} : { "Content-Type": "application/json" }) }, body: body === undefined ? undefined : JSON.stringify(body), cache: "no-store", signal });
+   const result = await response.json();
+   if (!response.ok) throw new Error(result.error?.message ?? "音乐接口暂时不可用，请重试。");
+   return result as T;
+@@ -56,8 +56,8 @@ export async function listeningLyrics(mid: string, signal?: AbortSignal) {
+   return parseLyrics(result.lyric);
+ }
+ 
+-export interface QrLoginStart { provider: "qq"; image: string; expiresIn: number; expiresAt: number; loginId: string }
+-export interface QrLoginPoll { provider: "qq"; status: "pending" | "scanned" | "expired" | "success" | "error"; message: string; nickname?: string; user?: QqUserProfile }
++export interface QrLoginStart { provider: "qq"; image: string; expiresIn: number; expiresAt: number; loginId: string; authorizeUrl?: string; message?: string }
++export interface QrLoginPoll { provider: "qq"; status: "pending" | "scanned" | "authorizing" | "cancelled" | "expired" | "success" | "error"; message: string; nickname?: string; user?: QqUserProfile }
+ 
+ export function startQqLogin(signal?: AbortSignal) {
+   return responseJson<QrLoginStart>("/api/qq/login/qr", signal);
+@@ -70,3 +70,7 @@ export function pollQqLogin(signal?: AbortSignal, loginId?: string) {
+ export function logoutQqLogin(signal?: AbortSignal) {
+   return responseJson<{ ok: boolean; message: string }>("/api/qq/login/logout", signal, "POST");
+ }
++
++export function cancelQqLogin(loginId: string) {
++  return responseJson<{ ok: boolean }>("/api/music/qq/cancel", undefined, "POST", { loginId });
++}
+diff --git a/src/lib/server/security-policy.ts b/src/lib/server/security-policy.ts
+index 773ff04..24a48f7 100644
+--- a/src/lib/server/security-policy.ts
++++ b/src/lib/server/security-policy.ts
+@@ -28,3 +28,13 @@ export function contentSecurityPolicy(nonce: string, development: boolean, paren
+     "frame-ancestors " + (parents.length ? parents.join(" ") : "'none'"),
+   ].join("; ") + ";";
+ }
++
++/** Trusted Vite bundles have no Next nonce. This policy applies only to their static subpage. */
++export function universeContentSecurityPolicy() {
++  return [
++    "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
++    "img-src 'self' blob: data: https:", "font-src 'self' data:", "media-src 'self' blob: data: https:",
++    "connect-src 'self' https:", "worker-src 'self' blob:", "object-src 'none'",
++    "base-uri 'self'", "form-action 'self'", "frame-src 'none'", "frame-ancestors 'self'",
++  ].join("; ") + ";";
++}
+diff --git a/src/proxy.ts b/src/proxy.ts
+index 20a12f3..4097de7 100644
+--- a/src/proxy.ts
++++ b/src/proxy.ts
+@@ -16,5 +16,5 @@ export function proxy(request: NextRequest) {
+ 
+ export const config = {
+   // Image sequences and videos bypass Proxy; only documents need a page nonce.
+-  matcher: ["/((?!api(?:/|$)|_next(?:/|$)|media(?:/|$)|samples(?:/|$)|favicon\\.ico$).*)"],
++  matcher: ["/((?!api(?:/|$)|_next(?:/|$)|universe(?:/|$)|media(?:/|$)|samples(?:/|$)|favicon\\.ico$).*)"],
+ };
+diff --git a/tests/music-platforms.test.ts b/tests/music-platforms.test.ts
+index 5c95403..b7c6110 100644
+--- a/tests/music-platforms.test.ts
++++ b/tests/music-platforms.test.ts
+@@ -7,7 +7,8 @@ import { deleteAccount, readAccount, saveAccount } from "@/lib/music/platforms/a
+ import { cancelLogin, logoutPlatform, platformStatus, pollPlatformLogin, startPlatformLogin } from "@/lib/music/platforms/login";
+ import { parsePlatform, resolvePlatformSong, searchPlatform } from "@/lib/music/platforms/catalog";
+ import { musicAudio, musicMediaTicket, parseAudioRange, revokeMedia, trustedMediaUrl } from "@/lib/music/platforms/media";
+-import { connectOfficialQqAccount, qqAccountCredentials } from "@/lib/music/providers/qq-account";
++import { qqAccountCredentials } from "@/lib/music/providers/qq-account";
++import { qqOAuthStatus } from "@/lib/music/providers/qq-oauth";
+ 
+ const fixtures = vi.hoisted(() => ({ db: null as DatabaseContext | null, call: vi.fn() }));
+ vi.mock("@/db/connection", async original => ({ ...await original<typeof import("@/db/connection")>(), getDatabase: () => fixtures.db! }));
+@@ -66,12 +67,10 @@ describe("music platform identity and login lifecycle", () => {
+     expect(await running).toMatchObject({ status: "cancelled" });
+     expect(readAccount(owner, "netease")).toBeNull();
+   });
+-  it("requires QQ music credentials, not just a generic confirmed QQ account", async () => {
+-    await expect(connectOfficialQqAccount(owner, "uin=o00123456; p_skey=fixture-web-session", signal(), () => true)).rejects.toMatchObject({ code: "QQ_PLAYBACK_AUTH_INCOMPLETE" });
+-    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ code: 0, data: { creator: { nick: "官方窗口用户", headpic: "https://q1.qlogo.cn/fixture" } } })));
+-    const profile = await connectOfficialQqAccount(owner, "uin=o00123456; qm_keyst=fixture-music-session", signal(), () => true);
+-    expect(profile.nickname).toBe("官方窗口用户");
+-    expect(qqAccountCredentials(owner)?.uin).toBe("123456");
++  it("never treats a copied QQ Music cookie as an official QQ identity grant", async () => {
++    saveAccount(owner, "qq", { cookie: "qm_keyst=fixture-legacy-cookie", profile: { id: "123456", nickname: "Legacy", avatar: "" } });
++    expect(await qqOAuthStatus(owner, signal())).toMatchObject({ authorized: false, musicAuthorized: false });
++    expect(qqAccountCredentials(owner)).toBeNull();
+     expect(qqAccountCredentials(other)).toBeNull();
+   });
+ });
+diff --git a/tests/qq-account-login.test.ts b/tests/qq-account-login.test.ts
+index 5304aaa..ff271d3 100644
+--- a/tests/qq-account-login.test.ts
++++ b/tests/qq-account-login.test.ts
+@@ -1,269 +1,156 @@
+-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+-import { eq } from "drizzle-orm";
+-import { mkdirSync, rmSync } from "node:fs";
+-import path from "node:path";
++import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+ import { openDatabase, type DatabaseContext } from "@/db/connection";
+-import { qqAccounts } from "@/db/schema";
++import { platformAccounts } from "@/db/schema";
+ import { createSession } from "@/lib/server/session";
+-import { logoutQqAccount, pollQqLogin, qqAccountCredentials, qqAccountStatus, startQqLogin } from "@/lib/music/providers/qq-account";
+-import { normalizeQqProfile, parseQqLoginCallback, trustedQqLoginUrl } from "@/lib/music/providers/qq-profile";
++import { readAccount, saveAccount } from "@/lib/music/platforms/accounts";
++import { cancelQqOAuth, completeQqOAuth, logoutQqOAuth, pollQqOAuth, qqOAuthAvailability, qqOAuthStatus, startQqOAuth } from "@/lib/music/providers/qq-oauth";
++import { qqAccountCredentials, qqAccountResolve } from "@/lib/music/providers/qq-account";
++import { normalizeQqProfile } from "@/lib/music/providers/qq-profile";
+ 
+-const state = vi.hoisted(() => ({ context: null as DatabaseContext | null }));
+-vi.mock("@/db/connection", async (original) => ({ ...await original<typeof import("@/db/connection")>(), getDatabase: () => state.context! }));
+-
+-const loginRuntime = globalThis as typeof globalThis & { __musicWorldQqLogin?: Map<string, unknown>; __musicWorldQqVaultKey?: Buffer; __musicWorldQqProfiles?: Map<string, unknown> };
+-let userId: string;
+-let code = "66";
+-let musicKey = true;
+-let profileExpired = false;
+-let profileUnavailable = false;
+-const persistenceFiles: string[] = [];
+-const callback = () => `ptuiCB('${code}','0','https://ptlogin4.y.qq.com/check_sig?uin=4201337&service=ptqrlogin&ptsigx=fixture-signature&s_url=https%3A%2F%2Fgraph.qq.com%2Foauth2.0%2Flogin_jump','0','登录回调','QQ 昵称');`;
+-function platformFetch() {
+-  return vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
++const db = vi.hoisted(() => ({ context: null as DatabaseContext | null }));
++vi.mock("@/db/connection", async original => ({ ...await original<typeof import("@/db/connection")>(), getDatabase: () => db.context! }));
++const runtime = globalThis as typeof globalThis & { qqOAuthJobs?: Map<string, { abort: AbortController }>; qqOAuthProfiles?: Map<string, unknown>; qqOAuthRefresh?: Map<string, unknown> };
++let owner: string, other: string, nickname: string, profileRet: number, identityApp: string, format: boolean, calls: Mock<(input: URL | string, init?: RequestInit) => Promise<Response>>;
++const signal = () => new AbortController().signal;
++const request = () => new Request("http://127.0.0.1:3002/api/music/qq/login", { headers: { host: "127.0.0.1:3002" } });
++beforeEach(() => {
++  db.context = openDatabase(":memory:"); owner = createSession(db.context).userId; other = createSession(db.context).userId;
++  vi.stubEnv("QQ_CONNECT_APP_ID", "12345678"); vi.stubEnv("QQ_CONNECT_APP_SECRET", "fixture-secret-for-this-application");
++  vi.stubEnv("QQ_CONNECT_REDIRECT_URI", "http://127.0.0.1:3002/api/qq/login/callback"); vi.stubEnv("APP_ORIGIN", "");
++  vi.stubEnv("MUSIC_CREDENTIAL_SECRET", "fixture-account-encryption-only");
++  nickname = "测试听众"; profileRet = 0; identityApp = "12345678"; format = false;
++  calls = vi.fn(async (input: URL | string, init?: RequestInit) => {
+     const url = new URL(String(input));
+-    if (url.pathname === "/ptqrshow") return new Response(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]), { headers: { "Content-Type": "image/png", "Set-Cookie": "qrsig=qr-fixture; Path=/" } });
+-    if (url.pathname === "/ptqrlogin") return new Response(callback());
+-    if (url.pathname === "/check_sig") {
+-      // Generic QQ callbacks provide identity cookies, but not the QQ Connect key.
+-      const connect = url.hostname === "ssl.ptlogin2.graph.qq.com" && url.searchParams.get("pt_3rd_aid") === "100497308" && new Headers(init?.headers).get("referer") === "https://xui.ptlogin2.qq.com/";
+-      return new Response("", { status: 302, headers: { "Set-Cookie": (connect ? "p_skey=test-identity; Path=/, " : "") + "uin=o004201337; Path=/" } });
++    expect(url.hostname).toBe("graph.qq.com"); expect(url.searchParams.get("fmt")).toBe("json");
++    expect(new Headers(init?.headers).has("cookie")).toBe(false);
++    if (url.pathname === "/oauth2.0/token") {
++      const refreshing = url.searchParams.get("grant_type") === "refresh_token";
++      const value = { access_token: refreshing ? "fixture-refreshed-access" : "fixture-access-token", refresh_token: refreshing ? "fixture-rotated-refresh" : "fixture-refresh-token", expires_in: 3600 };
++      return format ? new Response(new URLSearchParams(Object.entries(value).map(([key, value]) => [key, String(value)])).toString()) : Response.json(value);
+     }
+-    if (url.pathname === "/oauth2.0/authorize") return new Response("", { status: 302, headers: { location: "https://y.qq.com/portal/wx_redirect.html?code=test-code" } });
+-    if (url.pathname.endsWith("/musicu.fcg")) return Response.json({ code: 0, req: { code: 0, data: { musicid: 6789012, nick: "授权昵称", ...(musicKey ? { musickey: "test-music-ticket" } : {}) } } });
+-    if (url.pathname.endsWith("/fcg_get_profile_homepage.fcg")) {
+-      if (profileUnavailable) throw new Error("offline fixture");
+-      return Response.json(profileExpired ? { code: 1000 } : { code: 0, data: { creator: { nick: "%E9%9F%B3%E4%B9%90%E5%90%AC%E4%BC%97", headpic: "https://q1.qlogo.cn/g?b=qq&nk=4201337&s=100" } } });
++    if (url.pathname === "/oauth2.0/me") {
++      const value = { client_id: identityApp, openid: "fixture-openid-123" };
++      return format ? new Response("callback( " + JSON.stringify(value) + " );") : Response.json(value);
+     }
+-    throw new Error("Unexpected upstream host in login test");
++    if (url.pathname === "/user/get_user_info") return Response.json({ ret: profileRet, nickname, figureurl_qq_2: "", figureurl_qq_1: "https://q.qlogo.cn/qqapp/fixture/40" });
++    throw new Error("unexpected endpoint");
+   });
+-}
+-
+-beforeEach(() => {
+-  state.context = openDatabase(":memory:");
+-  userId = createSession(state.context).userId;
+-  code = "66"; musicKey = true; profileExpired = false; profileUnavailable = false;
+-  delete loginRuntime.__musicWorldQqLogin; delete loginRuntime.__musicWorldQqVaultKey; delete loginRuntime.__musicWorldQqProfiles;
+-  vi.stubEnv("QQ_CREDENTIAL_SECRET", "unit-test-only-encryption-secret");
+-  vi.stubGlobal("fetch", platformFetch());
++  vi.stubGlobal("fetch", calls);
+ });
+ afterEach(() => {
+-  state.context?.sqlite.close(); state.context = null;
+-  const storeRoot = path.resolve("work/qq-integration");
+-  for (const file of persistenceFiles.splice(0)) {
+-    if (path.dirname(file) !== storeRoot || !path.basename(file).startsWith("account-test-")) throw new Error("Unexpected test database path");
+-    for (const suffix of ["", "-wal", "-shm"]) rmSync(file + suffix, { force: true });
+-  }
+-  vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.useRealTimers();
+-  vi.restoreAllMocks();
+-  delete loginRuntime.__musicWorldQqLogin; delete loginRuntime.__musicWorldQqVaultKey; delete loginRuntime.__musicWorldQqProfiles;
++  runtime.qqOAuthJobs?.forEach(job => job.abort.abort()); runtime.qqOAuthJobs?.clear(); runtime.qqOAuthProfiles?.clear(); runtime.qqOAuthRefresh?.clear();
++  db.context?.sqlite.close(); db.context = null; vi.useRealTimers(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks();
+ });
+-const signal = () => new AbortController().signal;
++function start(user = owner) {
++  const login = startQqOAuth(user, request()), url = new URL(login.authorizeUrl);
++  return { login, state: url.searchParams.get("state")!, url };
++}
++async function connected() { const job = start(); const result = await completeQqOAuth(owner, job.state, "fixture-authorization-code"); return { ...job, result }; }
+ 
+-describe("QQ QR login, identity and credential storage", () => {
+-  it("obtains a session-bound QR, then reports pending, scanned and confirmed account information", async () => {
+-    const qr = await startQqLogin(userId, signal());
+-    expect(qr.image).toMatch(/^data:image\/png;base64,/);
+-    expect(qr.loginId).toMatch(/^[a-f0-9]{32}$/);
+-    expect(await pollQqLogin(userId, signal(), qr.loginId)).toMatchObject({ status: "pending" });
+-    code = "67";
+-    expect(await pollQqLogin(userId, signal(), qr.loginId)).toMatchObject({ status: "scanned" });
+-    code = "0";
+-    const loggedIn = await pollQqLogin(userId, signal(), qr.loginId);
+-    expect(loggedIn).toMatchObject({ status: "success", user: { id: "6789012", nickname: "音乐听众", avatar: expect.stringContaining("qlogo.cn") } });
+-    expect(JSON.stringify(loggedIn)).not.toMatch(/test-music-ticket|test-identity|cookie|qrsig/);
+-    expect(await qqAccountStatus(userId, signal())).toMatchObject({ authorized: true, user: loggedIn.user });
+-  });
+-  it("stores encrypted credentials and restores public identity independently of pending QR memory", async () => {
+-    await startQqLogin(userId, signal()); code = "0";
+-    await pollQqLogin(userId, signal());
+-    const row = state.context!.db.select().from(qqAccounts).where(eq(qqAccounts.userId, userId)).get()!;
+-    expect(row.credentials).not.toContain("test-music-ticket");
+-    expect(row.credentials.split(".")).toHaveLength(3);
+-    delete loginRuntime.__musicWorldQqLogin; delete loginRuntime.__musicWorldQqProfiles;
+-    expect(qqAccountCredentials(userId)?.cookie).toContain("test-music-ticket");
+-    expect(await qqAccountStatus(userId, signal())).toMatchObject({ authorized: true, user: { id: "6789012" } });
+-    const other = createSession(state.context!).userId;
+-    expect(await qqAccountStatus(other, signal())).toBeNull();
+-    expect(qqAccountCredentials(other)).toBeNull();
+-  });
+-  it("exchanges a generic QQ callback ticket on the QQ Connect host with its required application scope", async () => {
+-    await startQqLogin(userId, signal()); code = "0";
+-    expect(await pollQqLogin(userId, signal())).toMatchObject({ status: "success" });
+-    const checks = vi.mocked(fetch).mock.calls.filter(([input]) => new URL(String(input)).pathname === "/check_sig");
+-    expect(checks).toHaveLength(1);
+-    const [input, init] = checks[0];
+-    const url = new URL(String(input));
+-    expect(url.origin).toBe("https://ssl.ptlogin2.graph.qq.com");
+-    for (const [key, value] of Object.entries({ uin: "4201337", ptsigx: "fixture-signature", service: "ptqrlogin", aid: "716027609", daid: "383", pt_3rd_aid: "100497308", ptredirect: "100", s_url: "https://graph.qq.com/oauth2.0/login_jump" })) expect(url.searchParams.get(key)).toBe(value);
+-    expect(new Headers(init?.headers).get("referer")).toBe("https://xui.ptlogin2.qq.com/");
+-    const musicRequest = vi.mocked(fetch).mock.calls.find(([input]) => new URL(String(input)).pathname.endsWith("/musicu.fcg"))!;
+-    expect(JSON.parse(String(musicRequest[1]?.body)).comm.tmeLoginType).toBe(2);
+-  });
+-  it("keeps cookies across several QQ redirects before the authorization key is issued", async () => {
+-    const upstream = platformFetch();
+-    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+-      const url = new URL(String(input));
+-      if (url.pathname === "/check_sig") return new Response("", { status: 302, headers: { location: "/connect/continue", "Set-Cookie": "ptcz=redirect-fixture; Path=/" } });
+-      if (url.pathname === "/connect/continue") {
+-        expect(new Headers(init?.headers).get("cookie")).toContain("ptcz=redirect-fixture");
+-        return new Response("", { status: 302, headers: { location: "https://graph.qq.com/oauth2.0/login_jump" } });
+-      }
+-      if (url.pathname === "/oauth2.0/login_jump") return new Response("", { headers: { "Set-Cookie": "p_skey=test-identity; Path=/, uin=o004201337; Path=/" } });
+-      return upstream(input, init);
+-    }));
+-    await startQqLogin(userId, signal()); code = "0";
+-    expect(await pollQqLogin(userId, signal())).toMatchObject({ status: "success" });
+-  });
+-  it("accepts joined Set-Cookie headers when the credential is not the first cookie", async () => {
+-    const upstream = platformFetch();
+-    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+-      const url = new URL(String(input));
+-      if (url.pathname === "/check_sig") return new Response("", { status: 302, headers: { "Set-Cookie": "uin=o004201337; Expires=Wed, 21 Oct 2037 07:28:00 GMT; Path=/, p_skey=test-identity; Domain=.graph.qq.com; Path=/, ptcz=cookie-fixture; Path=/" } });
+-      if (url.pathname === "/oauth2.0/authorize") {
+-        const cookie = new Headers(init?.headers).get("cookie");
+-        expect(cookie).toContain("p_skey=test-identity");
+-        expect(cookie).toContain("ptcz=cookie-fixture");
+-      }
+-      return upstream(input, init);
+-    }));
+-    await startQqLogin(userId, signal()); code = "0";
+-    expect(await pollQqLogin(userId, signal())).toMatchObject({ status: "success" });
+-  });
+-  it("passes modern QQ authorization cookies through the official jump and requests nickname/avatar permission", async () => {
+-    const upstream = platformFetch();
+-    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+-      const url = new URL(String(input));
+-      if (url.pathname === "/check_sig") return new Response("", { status: 302, headers: { location: "https://graph.qq.com/oauth2.0/login_jump", "Set-Cookie": "p_uin=o004201337; Path=/, p_skey=; Path=/, p_skey_forbid=1; Path=/, pt_oauth_token=modern-test-token; Path=/" } });
+-      if (url.pathname === "/oauth2.0/login_jump") {
+-        expect(new Headers(init?.headers).get("cookie")).toContain("pt_oauth_token=modern-test-token");
+-        return new Response("", { headers: { "Set-Cookie": "connect_marker=jump-fixture; Path=/" } });
+-      }
+-      if (url.pathname === "/oauth2.0/authorize") {
+-        const headers = new Headers(init?.headers);
+-        const body = new URLSearchParams(String(init?.body));
+-        expect(headers.get("cookie")).toContain("pt_oauth_token=modern-test-token");
+-        expect(headers.get("cookie")).toContain("connect_marker=jump-fixture");
+-        expect(headers.get("origin")).toBe("https://graph.qq.com");
+-        expect(new URL(headers.get("referer")!).pathname).toBe("/oauth2.0/show");
+-        expect(body.get("g_tk")).toBe("5381");
+-        expect(body.get("scope")).toBe("get_user_info");
+-        expect(body.get("openapi")).toBe("1010");
+-      }
+-      return upstream(input, init);
+-    }));
+-    await startQqLogin(userId, signal()); code = "0";
+-    const result = await pollQqLogin(userId, signal());
+-    expect(result).toMatchObject({ status: "success", user: { id: "6789012", nickname: "音乐听众" } });
+-    expect(JSON.stringify(result)).not.toContain("modern-test-token");
+-  });
+-  it("reports an authorization redirect without logging codes, account values or token parameters", async () => {
+-    const upstream = platformFetch();
+-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+-    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+-      const url = new URL(String(input));
+-      if (url.pathname === "/oauth2.0/authorize") return new Response("", { status: 302, headers: { location: "https://graph.qq.com/oauth2.0/show?error_code=100010&access_token=private-diagnostic-token&uin=4201337" } });
+-      return upstream(input, init);
+-    }));
+-    await startQqLogin(userId, signal()); code = "0";
+-    expect(await pollQqLogin(userId, signal())).toMatchObject({ status: "error" });
+-    const logs = JSON.stringify(warn.mock.calls);
+-    expect(logs).toContain("/oauth2.0/show");
+-    expect(logs).toContain("100010");
+-    expect(logs).not.toMatch(/private-diagnostic-token|fixture-signature|test-identity|4201337/);
+-    expect(state.context!.db.select().from(qqAccounts).all()).toHaveLength(0);
+-  });
+-  it("uses the QQ Music credential for the music profile token instead of the QQ identity key", async () => {
+-    await startQqLogin(userId, signal()); code = "0";
+-    expect(await pollQqLogin(userId, signal())).toMatchObject({ status: "success" });
+-    const profileCall = vi.mocked(fetch).mock.calls.find(([input]) => new URL(String(input)).pathname.endsWith("/fcg_get_profile_homepage.fcg"))!;
+-    const url = new URL(String(profileCall[0]));
+-    expect(url.searchParams.get("g_tk")).toBe("1464240484");
+-    expect(url.searchParams.get("userid")).toBe("6789012");
+-  });
+-  it("rejects off-platform credential redirects and logs only structural diagnostics", async () => {
+-    const upstream = platformFetch();
+-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+-    vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+-      const url = new URL(String(input));
+-      if (url.pathname === "/check_sig") return new Response("", { status: 302, headers: { location: "https://attacker.invalid/collect", "Set-Cookie": "ptcz=private-test-value; Path=/" } });
+-      return upstream(input, init);
+-    }));
+-    await startQqLogin(userId, signal()); code = "0";
+-    expect(await pollQqLogin(userId, signal())).toMatchObject({ status: "error" });
+-    expect(vi.mocked(fetch).mock.calls.some(([input]) => new URL(String(input)).hostname === "attacker.invalid")).toBe(false);
+-    expect(state.context!.db.select().from(qqAccounts).all()).toHaveLength(0);
+-    const logs = JSON.stringify(warn.mock.calls);
+-    expect(logs).toContain("QQ_LOGIN_REDIRECT_INVALID");
+-    expect(logs).not.toMatch(/private-test-value|fixture-signature|4201337/);
+-  });
+-  it("does not claim QQ Music login from a QQ identity without a music credential", async () => {
+-    await startQqLogin(userId, signal()); code = "0"; musicKey = false;
+-    expect(await pollQqLogin(userId, signal())).toMatchObject({ status: "error" });
+-    expect(state.context!.db.select().from(qqAccounts).all()).toHaveLength(0);
+-    expect(await qqAccountStatus(userId, signal())).toBeNull();
+-  });
+-  it("restores encrypted account data after reopening the disk database and recreating the vault key", async () => {
+-    await startQqLogin(userId, signal()); code = "0";
+-    await pollQqLogin(userId, signal());
+-    const file = path.resolve("work/qq-integration/account-test-" + crypto.randomUUID() + ".db");
+-    mkdirSync(path.dirname(file), { recursive: true });
+-    persistenceFiles.push(file);
+-    await state.context!.sqlite.backup(file);
+-    state.context!.sqlite.close(); state.context = openDatabase(file);
+-    delete loginRuntime.__musicWorldQqVaultKey; delete loginRuntime.__musicWorldQqProfiles; delete loginRuntime.__musicWorldQqLogin;
+-    expect(await qqAccountStatus(userId, signal())).toMatchObject({ authorized: true, user: { id: "6789012", nickname: "音乐听众", avatar: expect.stringContaining("qlogo.cn") } });
+-  });
+-  it("isolates replaced QR requests and does not expose another browser session's login", async () => {
+-    const first = await startQqLogin(userId, signal());
+-    const next = await startQqLogin(userId, signal());
+-    expect(next.loginId).not.toBe(first.loginId);
+-    await expect(pollQqLogin(userId, signal(), first.loginId)).rejects.toMatchObject({ code: "QQ_QR_REPLACED" });
+-    const other = createSession(state.context!).userId;
+-    await expect(pollQqLogin(other, signal(), next.loginId)).rejects.toMatchObject({ code: "QQ_QR_MISSING" });
+-  });
+-  it("expires QR codes locally without contacting the upstream", async () => {
+-    const qr = await startQqLogin(userId, signal());
+-    vi.useFakeTimers(); vi.setSystemTime(qr.expiresAt + 1);
+-    expect(await pollQqLogin(userId, signal(), qr.loginId)).toMatchObject({ status: "expired" });
+-  });
+-  it("coalesces concurrent confirmation polls into one authorization exchange", async () => {
+-    const qr = await startQqLogin(userId, signal()); code = "0";
+-    const results = await Promise.all([pollQqLogin(userId, signal(), qr.loginId), pollQqLogin(userId, signal(), qr.loginId)]);
+-    expect(results.map(result => result.status)).toEqual(["success", "success"]);
+-    const calls = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes("oauth2.0/authorize"));
+-    expect(calls).toHaveLength(1);
+-  });
+-  it("reports confirmed upstream expiry, while preserving saved identity on a transient profile outage", async () => {
+-    await startQqLogin(userId, signal()); code = "0";
+-    await pollQqLogin(userId, signal());
+-    profileUnavailable = true;
+-    expect(await qqAccountStatus(userId, signal(), true)).toMatchObject({ authorized: true, profileAvailable: false, user: { nickname: "音乐听众" } });
+-    profileUnavailable = false; profileExpired = true;
+-    expect(await qqAccountStatus(userId, signal(), true)).toMatchObject({ authorized: false });
+-  });
+-  it("logout removes credentials, identity cache and the pending QR", async () => {
+-    await startQqLogin(userId, signal()); code = "0";
+-    await pollQqLogin(userId, signal());
+-    await qqAccountStatus(userId, signal());
+-    await startQqLogin(userId, signal());
+-    logoutQqAccount(userId);
+-    expect(await qqAccountStatus(userId, signal())).toBeNull();
+-    expect(qqAccountCredentials(userId)).toBeNull();
+-    await expect(pollQqLogin(userId, signal())).rejects.toMatchObject({ code: "QQ_QR_MISSING" });
++describe("QQ official OAuth adapter (upstream fixtures, not real authorization)", () => {
++  it("requires our registered application's config and uses an owner-bound, random state", async () => {
++    vi.stubEnv("QQ_CONNECT_APP_SECRET", "");
++    expect(qqOAuthAvailability().loginAvailable).toBe(false);
++    expect(() => start()).toThrowError();
++    expect(calls).not.toHaveBeenCalled();
++    vi.stubEnv("QQ_CONNECT_APP_SECRET", "fixture-secret-for-this-application");
++    const { url, login, state } = start();
++    expect(url.origin).toBe("https://graph.qq.com"); expect(url.searchParams.get("client_id")).toBe("12345678");
++    expect(url.searchParams.get("scope")).toBe("get_user_info"); expect(state).toHaveLength(43);
++    expect(login.image).toBe(""); expect(JSON.stringify(login)).not.toContain("fixture-secret");
++    expect(() => pollQqOAuth(other, login.loginId)).toThrow();
++    await expect(completeQqOAuth(owner, "wrong-state", "fixture-code")).rejects.toMatchObject({ code: "QQ_OAUTH_STATE_INVALID" });
++    expect(calls).not.toHaveBeenCalled();
++  });
++  it("checks the configured callback's path and origin before issuing a login", () => {
++    vi.stubEnv("QQ_CONNECT_REDIRECT_URI", "https://site.example/api/qq/login/callback");
++    expect(() => start()).toThrowError();
++    vi.stubEnv("QQ_CONNECT_REDIRECT_URI", "javascript:alert(1)"); expect(qqOAuthAvailability().loginAvailable).toBe(false);
++  });
++  it("exchanges code -> token -> OpenID -> real profile, encrypts tokens and exposes only display fields", async () => {
++    const { result, login } = await connected();
++    expect(result).toMatchObject({ status: "success", user: { id: "fixture-openid-123", nickname: "测试听众", avatar: expect.stringContaining("/api/qq/avatar") } });
++    expect(JSON.stringify(result)).not.toMatch(/fixture-access|fixture-refresh|access_token|cookie|client_secret/);
++    expect(calls).toHaveBeenCalledTimes(3);
++    const row = db.context!.db.select().from(platformAccounts).get()!;
++    expect(row.credentials).not.toContain("fixture-access-token");
++    expect(readAccount(owner, "qq")?.oauth?.accessToken).toBe("fixture-access-token");
++    expect(readAccount(other, "qq")).toBeNull();
++    expect(await qqOAuthStatus(owner, signal())).toMatchObject({ authorized: true, musicAuthorized: false, profileAvailable: true, user: result.user });
++    expect(pollQqOAuth(owner, login.loginId)).toMatchObject({ status: "success" });
++    expect(calls).toHaveBeenCalledTimes(3);
++    expect(qqAccountCredentials(owner)).toBeNull();
++    expect(await qqAccountResolve(owner, "songmid", "", signal())).toBeNull();
++  });
++  it("parses documented form/JSONP responses as data without evaluating Javascript", async () => {
++    format = true;
++    expect((await connected()).result.status).toBe("success");
++  });
++  it("rejects a different application's identity and incomplete/failed profiles without storing credentials", async () => {
++    identityApp = "87654321";
++    expect((await connected()).result.status).toBe("error"); expect(readAccount(owner, "qq")).toBeNull();
++    identityApp = "12345678"; nickname = "";
++    expect((await connected()).result.status).toBe("error"); expect(readAccount(owner, "qq")).toBeNull();
++    nickname = "\u0000\u0001";
++    expect((await connected()).result.status).toBe("error"); expect(readAccount(owner, "qq")).toBeNull();
++    nickname = "Fixture"; profileRet = 1002;
++    expect((await connected()).result.status).toBe("error"); expect(readAccount(owner, "qq")).toBeNull();
++  });
++  it("shares duplicate callbacks and keeps profile checks cached for sixty seconds", async () => {
++    const job = start();
++    const [a, b] = await Promise.all([completeQqOAuth(owner, job.state, "fixture-code"), completeQqOAuth(owner, job.state, "fixture-code")]);
++    expect(a).toEqual(b); expect(calls).toHaveBeenCalledTimes(3);
++    await Promise.all([qqOAuthStatus(owner, signal()), qqOAuthStatus(owner, signal())]); expect(calls).toHaveBeenCalledTimes(3);
++    nickname = "更新昵称"; const refreshed = await qqOAuthStatus(owner, signal(), true);
++    expect(refreshed).toMatchObject({ user: { nickname: "更新昵称" } }); expect(readAccount(owner, "qq")?.profile.nickname).toBe("更新昵称");
++  });
++  it("expires pending login independent of a timer, rejects replaced state, and respects cancellation", async () => {
++    vi.useFakeTimers();
++    const old = start(), next = start();
++    expect(() => pollQqOAuth(owner, old.login.loginId)).toThrow();
++    await expect(completeQqOAuth(owner, old.state, "fixture-code")).rejects.toMatchObject({ code: "QQ_OAUTH_STATE_INVALID" });
++    cancelQqOAuth(owner, next.login.loginId);
++    expect(await completeQqOAuth(owner, next.state, "fixture-code")).toMatchObject({ status: "cancelled" });
++    const expired = start(); vi.setSystemTime(Date.now() + 240001);
++    expect(pollQqOAuth(owner, expired.login.loginId)).toMatchObject({ status: "expired" });
++    expect(await completeQqOAuth(owner, expired.state, "fixture-code")).toMatchObject({ status: "expired" });
++    expect(calls).not.toHaveBeenCalled();
++  });
++  it("does not save a late profile after the user cancels authorization", async () => {
++    const normal = calls.getMockImplementation()!;
++    let release!: (value: Response) => void;
++    calls.mockImplementation((input, init) => new URL(String(input)).pathname === "/user/get_user_info" ? new Promise(resolve => { release = resolve; }) : normal(input, init));
++    const job = start(), finishing = completeQqOAuth(owner, job.state, "fixture-code");
++    await vi.waitFor(() => expect(release).toBeTypeOf("function"));
++    cancelQqOAuth(owner, job.login.loginId);
++    release(Response.json({ ret: 0, nickname: "late profile" }));
++    expect(await finishing).toMatchObject({ status: "cancelled" }); expect(readAccount(owner, "qq")).toBeNull();
++  });
++  it("renews a token once for concurrent callers and rotates the single-use refresh token", async () => {
++    vi.useFakeTimers(); await connected(); calls.mockClear(); vi.setSystemTime(Date.now() + 3601000);
++    const [a, b] = await Promise.all([qqOAuthStatus(owner, signal()), qqOAuthStatus(owner, signal())]);
++    expect(a.authorized).toBe(true); expect(b.authorized).toBe(true); expect(calls).toHaveBeenCalledTimes(2);
++    expect(readAccount(owner, "qq")?.oauth).toMatchObject({ accessToken: "fixture-refreshed-access", refreshToken: "fixture-rotated-refresh" });
++    expect(JSON.stringify(a)).not.toContain("fixture-refreshed-access");
++  });
++  it("does not restore an account after logout while a profile request is in flight", async () => {
++    await connected(); const normal = calls.getMockImplementation()!;
++    let release!: (value: Response) => void;
++    calls.mockImplementation((input, init) => new URL(String(input)).pathname === "/user/get_user_info" ? new Promise(resolve => { release = resolve; }) : normal(input, init));
++    const refresh = qqOAuthStatus(owner, signal(), true); await vi.waitFor(() => expect(release).toBeTypeOf("function"));
++    logoutQqOAuth(owner); release(Response.json({ ret: 0, nickname: "late profile" }));
++    expect(await refresh).toMatchObject({ authorized: false }); expect(readAccount(owner, "qq")).toBeNull();
++  });
++  it("does not equate a saved cookie or a failed profile check with verified login", async () => {
++    saveAccount(owner, "qq", { cookie: "qm_keyst=fixture-legacy-cookie", profile: { id: "legacy", nickname: "Legacy", avatar: "" } });
++    expect(await qqOAuthStatus(owner, signal())).toMatchObject({ authorized: false, musicAuthorized: false });
++    await connected(); profileRet = 1002;
++    expect(await qqOAuthStatus(owner, signal(), true)).toMatchObject({ authorized: false, profileAvailable: false });
++  });
++  it("normalizes the official 40px avatar fallback and rejects unsafe avatar origins", () => {
++    expect(normalizeQqProfile({ nickname: "昵称", figureurl_qq_1: "http://q.qlogo.cn/qqapp/fixture/40" }, { id: "official-openid", nickname: "", avatar: "" }))
++      .toMatchObject({ id: "official-openid", nickname: "昵称", avatar: "https://q.qlogo.cn/qqapp/fixture/40" });
++    expect(normalizeQqProfile({ figureurl_qq_2: "https://attacker.example/avatar" }, { id: "id", nickname: "n", avatar: "" }).avatar).toBe("");
+   });
+ });
+ 
+-describe("QQ public profile and callback parsing", () => {
+-  it("decodes escaped callback nicknames as data and only accepts QQ HTTPS redirects", () => {
+-    expect(parseQqLoginCallback("ptuiCB('67','0','','0','已扫码','O\\'Brien');")?.nickname).toBe("O'Brien");
+-    expect(parseQqLoginCallback("alert('0','0','https://qq.com','0','登录成功')")).toBeNull();
+-    expect(trustedQqLoginUrl("https://ptlogin4.y.qq.com/check_sig")).not.toBeNull();
+-    for (const url of ["http://qq.com", "https://qq.com.attacker.test", "https://user:pass@qq.com", "http://127.0.0.1"]) expect(trustedQqLoginUrl(url)).toBeNull();
+-  });
+-  it("normalizes public fields without leaking credentials or trusting a replacement identity", () => {
+-    const user = normalizeQqProfile({ data: { creator: { uin: "wrong-user", nick: "A&amp;B", headpic: "//q1.qlogo.cn/image" }, cookie: "private" } }, { id: "12345", nickname: "previous", avatar: "" });
+-    expect(user).toEqual({ id: "12345", nickname: "A&B", avatar: "https://q1.qlogo.cn/image" });
+-    expect(normalizeQqProfile({ data: { creator: { avatar: "javascript:alert(1)" } } }, user)).toEqual(user);
+-  });
+-});
+diff --git a/tests/security-policy.test.ts b/tests/security-policy.test.ts
+index 967e882..5e9a8e9 100644
+--- a/tests/security-policy.test.ts
++++ b/tests/security-policy.test.ts
+@@ -1,8 +1,27 @@
+ import { describe, expect, it } from "vitest";
+-import { contentSecurityPolicy, frameAncestorSources } from "@/lib/server/security-policy";
++import { contentSecurityPolicy, frameAncestorSources, universeContentSecurityPolicy } from "@/lib/server/security-policy";
++import nextConfig from "../next.config";
+ 
+ const nonce = "abcdefghijklmnopqrstuvwx12345678";
+ describe("document security policy", () => {
++  it("excludes authorization callbacks and media tickets from development request logs", () => {
++    const logging = nextConfig.logging;
++    if (!logging || typeof logging.incomingRequests !== "object") throw new Error("Sensitive request logging must be filtered");
++    const filters = logging.incomingRequests.ignore ?? [];
++    for (const url of ["/api/qq/login/callback?code=fixture&state=fixture", "/api/music/audio?ticket=fixture", "/api/qq/audio?ticket=fixture"]) {
++      expect(filters.some(pattern => pattern.test(url))).toBe(true);
++    }
++    expect(filters.some(pattern => pattern.test("/api/health"))).toBe(false);
++  });
++  it("gives only the universe build same-origin embedding and external user media without inline scripts", () => {
++    const policy = universeContentSecurityPolicy();
++    expect(policy).toContain("media-src 'self' blob: data: https:");
++    expect(policy).toContain("frame-ancestors 'self'");
++    expect(policy).toContain("script-src 'self'");
++    expect(policy).not.toContain("'unsafe-eval'");
++    expect(policy).not.toMatch(/script-src[^;]*unsafe-inline/);
++    expect(contentSecurityPolicy(nonce, false)).toContain("frame-ancestors 'none'");
++  });
+   it("allows only nonce scripts in production while retaining the local scene resources", () => {
+     const policy = contentSecurityPolicy(nonce, false);
+     const scripts = policy.split(";").find((part) => part.includes("script-src"))!;
+diff --git a/scripts/sync-universe.mjs b/scripts/sync-universe.mjs
+new file mode 100644
+index e69de29..a05166d 100644
+--- /dev/null
++++ b/scripts/sync-universe.mjs
+@@ -0,0 +1,42 @@
++import { spawnSync } from 'node:child_process';
++import { createHash } from 'node:crypto';
++import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
++import path from 'node:path';
++
++const root = process.cwd();
++const source = path.resolve(process.env.MUSIC_UNIVERSE_SOURCE || process.argv[2] || path.join(root, '../../Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'));
++const destination = path.join(root, 'public/universe');
++if (path.dirname(destination) !== path.join(root, 'public')) throw new Error('Invalid universe destination');
++if (!existsSync(path.join(source, 'package.json'))) {
++  if (existsSync(path.join(destination, 'index.html')) && existsSync(path.join(destination, 'build-manifest.json'))) {
++    console.log('Using the already synchronized universe build. Set MUSIC_UNIVERSE_SOURCE to rebuild it.');
++    process.exit(0);
++  }
++  throw new Error('Set MUSIC_UNIVERSE_SOURCE to the existing music-universe source directory.');
++}
++const pkg = JSON.parse(readFileSync(path.join(source, 'package.json'), 'utf8'));
++if (pkg.name !== 'music-universe') throw new Error('MUSIC_UNIVERSE_SOURCE must point to music-universe.');
++const npmCli = process.env.npm_execpath || path.join(path.dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js');
++if (!existsSync(npmCli)) throw new Error('Run this script with npm run build:universe.');
++const build = spawnSync(process.execPath, [npmCli, 'run', 'build:hall'], { cwd: source, stdio: 'inherit', windowsHide: true });
++if (build.status !== 0) process.exit(build.status || 1);
++const dist = path.join(source, 'dist');
++const entry = readFileSync(path.join(dist, 'index.html'), 'utf8');
++if (!entry.includes('/universe/assets/')) throw new Error('Expected a build with base=/universe/.');
++mkdirSync(destination, { recursive: true });
++cpSync(dist, destination, { recursive: true });
++// Public fonts are not transformed by Vite. Keep their URLs relative to this stylesheet.
++const fonts = path.join(destination, 'fonts/fonts.css');
++if (existsSync(fonts)) writeFileSync(fonts, readFileSync(fonts, 'utf8').replaceAll('/fonts/', './'));
++function files(directory, relative = '') {
++  return readdirSync(directory, { withFileTypes: true }).flatMap(item => {
++    const name = path.posix.join(relative, item.name);
++    if (item.isDirectory()) return files(path.join(directory, item.name), name);
++    if (!item.isFile()) throw new Error('Unexpected non-file in universe build.');
++    if (name === 'build-manifest.json') return [];
++    return [{ path: name, sha256: createHash('sha256').update(readFileSync(path.join(directory, item.name))).digest('hex') }];
++  });
++}
++const manifest = { version: 1, base: '/universe/', builtAt: new Date().toISOString(), files: files(destination) };
++writeFileSync(path.join(destination, 'build-manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
++console.log(`Synchronized ${manifest.files.length} universe resources to public/universe.`);
+diff --git a/src/app/album-universe.css b/src/app/album-universe.css
+new file mode 100644
+index e69de29..8247135 100644
+--- /dev/null
++++ b/src/app/album-universe.css
+@@ -0,0 +1,17 @@
++.mw-universe-room { position: fixed; inset: 0; z-index: 90; overflow: hidden; background: #060d18; }
++.mw-universe-room iframe { display: block; border: 0; width: 100%; height: 100%; }
++.mw-universe-loading { position: absolute; inset: 0; display: grid; place-content: center; background: radial-gradient(ellipse at 50% 45%, #152239, #060d18 65%); transition: opacity .65s ease, visibility 0s .65s; }
++.mw-universe-room.is-ready .mw-universe-loading { opacity: 0; visibility: hidden; pointer-events: none; }
++.mw-universe-loading-orbit { position: absolute; left: 50%; top: 50%; width: 116px; height: 116px; transform: translate(-50%, -50%); perspective: 300px; }
++.mw-universe-loading-orbit i { position: absolute; inset: 0; border: 1px solid #d9bb7740; border-top-color: #f7deb0; border-radius: 50%; animation: mw-universe-orbit 4s linear infinite; box-shadow: 0 0 12px #d9bb7710; }
++.mw-universe-loading-orbit i:nth-child(2) { inset: 13px; animation-duration: 3s; animation-direction: reverse; opacity: .7; }
++.mw-universe-loading-orbit i:nth-child(3) { inset: 26px; animation-duration: 5s; opacity: .45; }
++.mw-universe-loading-orbit b { position: absolute; inset: 49px; background: #f4d39a; border-radius: 50%; box-shadow: 0 0 30px #e2b97680, 0 0 70px #d9ad5930; animation: mw-universe-core 2s ease-in-out infinite alternate; }
++.mw-universe-transition .mw-fog-veil { background: radial-gradient(ellipse at var(--fog-x) var(--fog-y), #3d3740, #121d31 45%, #060d18 80%); }
++.mw-universe-transition .mw-fog-clouds { opacity: .2; }
++.mw-universe-transition .mw-fog-bloom { background: radial-gradient(circle, #ffe3af66, #c8a17526 45%, transparent 72%); }
++.mw-universe-recovery { position: absolute; top: calc(50% + 92px); left: 50%; transform: translateX(-50%); display: flex; gap: 18px; }
++.mw-universe-recovery button { width: 44px; height: 44px; border: 1px solid #d9bb7740; background: #172239; color: #eed8b1; border-radius: 50%; font-size: 23px; cursor: pointer; }
++@keyframes mw-universe-orbit { from { transform: rotateX(55deg) rotateZ(0); } to { transform: rotateX(55deg) rotateZ(360deg); } }
++@keyframes mw-universe-core { from { opacity: .5; transform: scale(.85); } to { opacity: .95; transform: scale(1.08); } }
++@media (prefers-reduced-motion: reduce) { .mw-universe-loading-orbit i, .mw-universe-loading-orbit b { animation: none; } .mw-universe-loading { transition-duration: .01ms; } }
+diff --git a/src/components/home/AlbumUniverseRoom.tsx b/src/components/home/AlbumUniverseRoom.tsx
+new file mode 100644
+index e69de29..08bdc23 100644
+--- /dev/null
++++ b/src/components/home/AlbumUniverseRoom.tsx
+@@ -0,0 +1,35 @@
++"use client";
++
++import { useEffect, useRef, useState } from "react";
++import type { HallStage } from "./hall-modules";
++
++const rooms = ["hall", "world", "library", "journey"] as const;
++
++/** The existing Three.js application is built into public/universe on this origin. */
++export function AlbumUniverseRoom({ onNavigate }: { onNavigate: (room: HallStage) => void }) {
++  const frame = useRef<HTMLIFrameElement>(null);
++  const navigate = useRef(onNavigate);
++  const [ready, setReady] = useState(false), [failed, setFailed] = useState(false), [attempt, setAttempt] = useState(0);
++  useEffect(() => { navigate.current = onNavigate; }, [onNavigate]);
++  useEffect(() => {
++    const timer = window.setTimeout(() => setFailed(true), 45000);
++    const message = (event: MessageEvent) => {
++      if (event.origin !== window.location.origin || event.source !== frame.current?.contentWindow) return;
++      const data: unknown = event.data;
++      if (!data || typeof data !== "object") return;
++      const value = data as { type?: unknown; room?: unknown };
++      if (value.type === "music-universe:ready") { clearTimeout(timer); setReady(true); setFailed(false); }
++      if (value.type === "music-universe:navigate" && rooms.some(room => room === value.room)) navigate.current(value.room as HallStage);
++    };
++    window.addEventListener("message", message);
++    return () => { clearTimeout(timer); window.removeEventListener("message", message); };
++  }, [attempt]);
++  const reload = () => { setReady(false); setFailed(false); setAttempt(value => value + 1); };
++  return <section className={`mw-universe-room${ready ? " is-ready" : ""}`} aria-label="专辑宇宙" aria-busy={!ready} data-testid="album-universe-room">
++    <iframe key={attempt} ref={frame} src="/universe/index.html" title="专辑宇宙 3D 场景" allow="autoplay; fullscreen" allowFullScreen onError={() => setFailed(true)} />
++    <div className="mw-universe-loading" role="status" aria-label={failed ? "专辑宇宙加载失败" : "正在加载专辑宇宙"} aria-hidden={ready} inert={ready}>
++      <div className="mw-universe-loading-orbit" aria-hidden="true"><i /><i /><i /><b /></div>
++      {failed && <div className="mw-universe-recovery"><button type="button" aria-label="重新加载专辑宇宙" onClick={reload}>↻</button><button type="button" aria-label="返回大厅" onClick={() => navigate.current("hall")}>↶</button></div>}
++    </div>
++  </section>;
++}
+diff --git a/src/lib/music/providers/qq-oauth.ts b/src/lib/music/providers/qq-oauth.ts
+new file mode 100644
+index e69de29..29486d9 100644
+--- /dev/null
++++ b/src/lib/music/providers/qq-oauth.ts
+@@ -0,0 +1,185 @@
++import "server-only";
++import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
++import { RequestError } from "@/lib/server/errors";
++import { deleteAccount, readAccount, saveAccount } from "../platforms/accounts";
++import { normalizeQqProfile, type QqUserProfile } from "./qq-profile";
++import type { PlatformAccount, QqOAuthGrant } from "../platforms/types";
++
++type Status = "pending" | "authorizing" | "success" | "expired" | "cancelled" | "error";
++interface Job { id: string; owner: string; stateHash: Buffer; expiresAt: number; status: Status; message: string; abort: AbortController; user?: QqUserProfile; completion?: Promise<ReturnType<typeof publicJob>> }
++interface VerifiedAccount extends PlatformAccount { oauth: QqOAuthGrant }
++const runtime = globalThis as typeof globalThis & {
++  qqOAuthJobs?: Map<string, Job>;
++  qqOAuthProfiles?: Map<string, { token: string; until: number; user: QqUserProfile }>;
++  qqOAuthRefresh?: Map<string, Promise<VerifiedAccount>>;
++};
++const jobs = () => runtime.qqOAuthJobs ??= new Map();
++const digest = (value: string) => createHash("sha256").update(value).digest();
++const publicUser = (user: QqUserProfile): QqUserProfile => ({ ...user, avatar: user.avatar ? "/api/qq/avatar?v=" + createHash("sha256").update(user.avatar).digest("hex").slice(0, 12) : "" });
++const publicJob = (job: Job) => ({ provider: "qq" as const, loginId: job.id, expiresAt: job.expiresAt, status: job.status, message: job.message, user: job.user && publicUser(job.user), nickname: job.user?.nickname });
++
++export function qqOAuthConfig() {
++  const appId = process.env.QQ_CONNECT_APP_ID?.trim() || "", secret = process.env.QQ_CONNECT_APP_SECRET?.trim() || "";
++  const redirect = process.env.QQ_CONNECT_REDIRECT_URI?.trim() || "";
++  if (!/^\d{5,32}$/.test(appId) || secret.length < 16 || secret.length > 512) return null;
++  try {
++    const url = new URL(redirect);
++    if (url.protocol !== "https:" && !(url.protocol === "http:" && ["127.0.0.1", "localhost"].includes(url.hostname))) return null;
++    if (url.username || url.password || url.search || url.hash || url.pathname !== "/api/qq/login/callback") return null;
++    return { appId, secret, redirect: url.href };
++  } catch { return null; }
++}
++export function qqOAuthAvailability() {
++  return { loginAvailable: !!qqOAuthConfig(), loginMode: "oauth" as const,
++    message: qqOAuthConfig() ? "通过 QQ 官方授权页面扫码连接账号。QQ 音乐播放需要单独授权。" : "尚未配置本应用的 QQ 官方授权。需要 QQ 互联 App ID、App Key 和登记回调地址。" };
++}
++
++/** Documented QQ Connect endpoints, without platform cookies or borrowed app IDs. */
++async function official(endpoint: "token" | "me" | "profile", params: Record<string, string>, signal: AbortSignal): Promise<Record<string, unknown>> {
++  const url = new URL(endpoint === "profile" ? "https://graph.qq.com/user/get_user_info" : `https://graph.qq.com/oauth2.0/${endpoint}`);
++  Object.entries({ ...params, fmt: "json" }).forEach(([key, value]) => url.searchParams.set(key, value));
++  try {
++    const response = await fetch(url, { redirect: "error", credentials: "omit", cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]) });
++    if (!response.ok) throw new Error("upstream");
++    const reader = response.body?.getReader(); if (!reader) throw new Error("empty");
++    const chunks: Uint8Array[] = []; let size = 0;
++    try {
++      for (;;) {
++        const { value, done } = await reader.read(); if (done) break;
++        size += value.length;
++        if (size > 32768) { await reader.cancel(); throw new Error("too-large"); }
++        chunks.push(value);
++      }
++    } finally { reader.releaseLock(); }
++    const raw = Buffer.concat(chunks).toString("utf8").trim(); let value: unknown;
++    if (raw.startsWith("{")) value = JSON.parse(raw);
++    else if (/^callback\s*\(/.test(raw)) value = JSON.parse(raw.replace(/^callback\s*\(\s*/, "").replace(/\s*\)\s*;?\s*$/, ""));
++    else value = Object.fromEntries(new URLSearchParams(raw));
++    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid");
++    const record = value as Record<string, unknown>;
++    if (record.error !== undefined || (endpoint === "profile" && Number(record.ret) !== 0)) throw new RequestError(401, "QQ 官方授权或账号资料未通过校验，请重新连接。", "QQ_OAUTH_REJECTED");
++    return record;
++  } catch (error) {
++    if (signal.aborted) throw signal.reason;
++    if (error instanceof RequestError) throw error;
++    // Exceptions and response bodies can contain tokens. Never expose/log them.
++    throw new RequestError(502, "QQ 官方服务暂时无法响应，请稍后重试。", "QQ_OAUTH_UNAVAILABLE");
++  }
++}
++function grant(value: Record<string, unknown>, appId: string): QqOAuthGrant {
++  const token = value.access_token, seconds = Number(value.expires_in);
++  if (typeof token !== "string" || !/^[A-Za-z0-9_-]{8,1024}$/.test(token) || !Number.isFinite(seconds) || seconds <= 0 || seconds > 90 * 86400) throw new RequestError(502, "QQ 官方授权未返回有效令牌。", "QQ_OAUTH_TOKEN_MISSING");
++  return { kind: "qq-connect", appId, accessToken: token, expiresAt: Date.now() + seconds * 1000,
++    refreshToken: typeof value.refresh_token === "string" && /^[A-Za-z0-9_-]{8,1024}$/.test(value.refresh_token) ? value.refresh_token : undefined };
++}
++async function profile(access: QqOAuthGrant, id: string, signal: AbortSignal) {
++  const value = await official("profile", { access_token: access.accessToken, oauth_consumer_key: access.appId, openid: id }, signal);
++  if (typeof value.nickname !== "string" || !value.nickname.replace(/[\u0000-\u001f\u007f]/g, "").trim()) throw new RequestError(502, "QQ 官方接口尚未返回昵称，请重新连接。", "QQ_PROFILE_MISSING");
++  return normalizeQqProfile(value, { id, nickname: "", avatar: "" });
++}
++function verified(owner: string): VerifiedAccount | null {
++  const account = readAccount(owner, "qq"), config = qqOAuthConfig();
++  if (!config || !account?.oauth || account.oauth.kind !== "qq-connect" || account.oauth.appId !== config.appId || !Number.isFinite(account.oauth.expiresAt) || !account.oauth.accessToken || !account.profile?.id || !account.profile.nickname) return null;
++  return account as VerifiedAccount;
++}
++function cacheProfile(owner: string, account: VerifiedAccount) {
++  const cache = runtime.qqOAuthProfiles ??= new Map();
++  for (const [key, entry] of cache) if (entry.until <= Date.now()) cache.delete(key);
++  while (cache.size >= 500) cache.delete(cache.keys().next().value!);
++  cache.set(owner, { token: account.oauth.accessToken, until: Math.min(account.oauth.expiresAt, Date.now() + 60000), user: account.profile });
++}
++const active = (job: Job) => jobs().get(job.owner) === job && !job.abort.signal.aborted && job.expiresAt > Date.now() && ["pending", "authorizing"].includes(job.status);
++
++export function cancelQqOAuth(owner: string, id?: string) {
++  const job = jobs().get(owner);
++  if (job && (!id || id === job.id) && ["pending", "authorizing"].includes(job.status)) { job.status = "cancelled"; job.message = "QQ 登录已取消。"; job.abort.abort(); }
++  return { ok: true };
++}
++export function logoutQqOAuth(owner: string) {
++  cancelQqOAuth(owner); deleteAccount(owner, "qq"); runtime.qqOAuthProfiles?.delete(owner);
++  return { provider: "qq" as const, ok: true, message: "已断开 QQ 账号。" };
++}
++export function startQqOAuth(owner: string, request?: Request) {
++  const config = qqOAuthConfig();
++  if (!config) throw new RequestError(503, qqOAuthAvailability().message, "QQ_OFFICIAL_CONFIG_REQUIRED");
++  if (request) {
++    const url = new URL(request.url), origin = process.env.APP_ORIGIN || new URL(url.protocol + "//" + (request.headers.get("host") || url.host)).origin;
++    if (new URL(config.redirect).origin !== origin) throw new RequestError(503, "QQ 回调地址与当前站点不一致，请检查官方登记域名和 APP_ORIGIN。", "QQ_CALLBACK_ORIGIN_MISMATCH");
++  }
++  for (const [key, job] of jobs()) if (job.expiresAt + 600000 <= Date.now()) { job.abort.abort(); jobs().delete(key); }
++  if (jobs().size >= 256 && !jobs().has(owner)) throw new RequestError(429, "登录请求较多，请稍后重试。", "QQ_LOGIN_BUSY");
++  cancelQqOAuth(owner);
++  const state = randomBytes(32).toString("base64url");
++  const job: Job = { owner, id: randomUUID(), stateHash: digest(state), status: "pending", expiresAt: Date.now() + 240000, abort: new AbortController(), message: "请在 QQ 官方授权页面扫码并确认。" };
++  jobs().set(owner, job);
++  const authorize = new URL("https://graph.qq.com/oauth2.0/authorize");
++  Object.entries({ response_type: "code", client_id: config.appId, redirect_uri: config.redirect, scope: "get_user_info", state }).forEach(([key, value]) => authorize.searchParams.set(key, value));
++  return { ...publicJob(job), authorizeUrl: authorize.href, image: "", expiresIn: 240000 };
++}
++export function pollQqOAuth(owner: string, id?: string) {
++  const job = jobs().get(owner);
++  if (!job || (id && id !== job.id)) throw new RequestError(409, "本次 QQ 登录已更新，请重新连接。", "QQ_LOGIN_REPLACED");
++  if (job.expiresAt <= Date.now() && ["pending", "authorizing"].includes(job.status)) { job.status = "expired"; job.message = "QQ 登录已过期，请重新连接。"; job.abort.abort(); }
++  return publicJob(job);
++}
++export async function completeQqOAuth(owner: string, state: string, code: string, denied = false) {
++  const job = jobs().get(owner), config = qqOAuthConfig();
++  if (!job || !config || state.length > 256 || !timingSafeEqual(job.stateHash, digest(state))) throw new RequestError(409, "QQ 登录状态校验失败，请重新连接。", "QQ_OAUTH_STATE_INVALID");
++  if (job.completion) return job.completion;
++  if (!active(job)) return pollQqOAuth(owner, job.id);
++  if (denied) { job.status = "cancelled"; job.message = "你已取消 QQ 官方授权。"; job.abort.abort(); return publicJob(job); }
++  if (!/^[A-Za-z0-9_-]{8,512}$/.test(code)) throw new RequestError(400, "QQ 官方回调缺少授权码。", "QQ_OAUTH_CODE_MISSING");
++  job.status = "authorizing"; job.message = "正在通过官方接口获取 QQ 昵称和头像…";
++  job.completion = (async () => {
++    try {
++      const access = grant(await official("token", { grant_type: "authorization_code", client_id: config.appId, client_secret: config.secret, redirect_uri: config.redirect, code }, job.abort.signal), config.appId);
++      const identity = await official("me", { access_token: access.accessToken }, job.abort.signal);
++      if (identity.client_id !== config.appId || typeof identity.openid !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(identity.openid)) throw new RequestError(401, "QQ 身份不属于当前应用，请重新授权。", "QQ_OAUTH_IDENTITY_INVALID");
++      const user = await profile(access, identity.openid, job.abort.signal);
++      if (!active(job)) return pollQqOAuth(owner, job.id);
++      const account: VerifiedAccount = { cookie: "", oauth: access, profile: user };
++      saveAccount(owner, "qq", account); cacheProfile(owner, account);
++      job.user = user; job.status = "success"; job.message = "QQ 账号已连接：" + user.nickname + "。QQ 音乐播放需另行授权。";
++    } catch (error) {
++      if (active(job)) { job.status = "error"; job.message = error instanceof RequestError ? error.message : "QQ 授权未完成，请重新连接。"; }
++    }
++    if (job.expiresAt <= Date.now() && ["pending", "authorizing"].includes(job.status)) { job.status = "expired"; job.message = "QQ 登录已过期，请重新连接。"; }
++    return publicJob(job);
++  })();
++  return job.completion;
++}
++async function renew(owner: string, account: VerifiedAccount): Promise<VerifiedAccount> {
++  const existing = runtime.qqOAuthRefresh ??= new Map();
++  if (existing.has(owner)) return existing.get(owner)!;
++  const pending = (async () => {
++    const signal = AbortSignal.timeout(20000);
++    const config = qqOAuthConfig();
++    if (!config || !account.oauth.refreshToken) throw new RequestError(401, "QQ 登录已过期，请重新连接。", "QQ_OAUTH_EXPIRED");
++    const access = grant(await official("token", { grant_type: "refresh_token", client_id: config.appId, client_secret: config.secret, refresh_token: account.oauth.refreshToken }, signal), config.appId);
++    const next: VerifiedAccount = { ...account, oauth: access };
++    next.profile = await profile(access, account.profile.id, signal);
++    if (verified(owner)?.oauth.accessToken !== account.oauth.accessToken) throw new RequestError(409, "QQ 账号连接已更新。", "QQ_LOGIN_REPLACED");
++    saveAccount(owner, "qq", next); cacheProfile(owner, next); return next;
++  })().finally(() => { if (existing.get(owner) === pending) existing.delete(owner); });
++  existing.set(owner, pending); return pending;
++}
++export async function qqOAuthStatus(owner: string, signal: AbortSignal, refresh = false) {
++  const availability = qqOAuthAvailability();
++  const base = { provider: "qq" as const, configured: availability.loginAvailable, ...availability, musicAuthorized: false as const };
++  let account = verified(owner);
++  if (!account) return { ...base, authorized: false, profileAvailable: false };
++  try {
++    if (account.oauth.expiresAt <= Date.now() + 60000) account = await renew(owner, account);
++    const cached = runtime.qqOAuthProfiles?.get(owner);
++    const user = !refresh && cached?.token === account.oauth.accessToken && cached.until > Date.now() ? cached.user : await profile(account.oauth, account.profile.id, signal);
++    signal.throwIfAborted();
++    if (verified(owner)?.oauth.accessToken !== account.oauth.accessToken) throw new RequestError(409, "QQ 账号连接已更新。", "QQ_LOGIN_REPLACED");
++    if (user.nickname !== account.profile.nickname || user.avatar !== account.profile.avatar) { account.profile = user; saveAccount(owner, "qq", account); }
++    cacheProfile(owner, { ...account, profile: user });
++    return { ...base, authorized: true, nickname: user.nickname, user: publicUser(user), profileAvailable: true, message: "QQ 账号已连接：" + user.nickname + "。QQ 音乐播放需另行授权。" };
++  } catch (error) {
++    if (signal.aborted) throw signal.reason;
++    return { ...base, authorized: false, profileAvailable: false, message: error instanceof RequestError ? error.message : "暂时无法确认 QQ 账号，请稍后刷新。" };
++  }
++}
++export function qqOAuthAvatar(owner: string) { return verified(owner)?.profile.avatar || ""; }
+diff --git a/src/app/api/qq/login/callback/route.ts b/src/app/api/qq/login/callback/route.ts
+new file mode 100644
+index e69de29..490f790 100644
+--- /dev/null
++++ b/src/app/api/qq/login/callback/route.ts
+@@ -0,0 +1,17 @@
++import { NextResponse, type NextRequest } from "next/server";
++import { SESSION_COOKIE, findUser } from "@/lib/server/session";
++import { completeQqOAuth } from "@/lib/music/providers/qq-oauth";
++export const runtime = "nodejs";
++
++// QQ callbacks have no custom API header. Authenticate the HttpOnly session and owner-bound state.
++export async function GET(request: NextRequest) {
++  let success = false;
++  try {
++    const owner = findUser(request.cookies.get(SESSION_COOKIE)?.value);
++    if (owner) {
++      const result = await completeQqOAuth(owner, request.nextUrl.searchParams.get("state") || "", request.nextUrl.searchParams.get("code") || "", request.nextUrl.searchParams.has("error"));
++      success = result.status === "success";
++    }
++  } catch { /* Keep authorization codes, responses and tokens out of logs and HTML. */ }
++  return NextResponse.redirect(new URL("/api/qq/login/complete?status=" + (success ? "success" : "error"), request.url), { status: 303, headers: { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
++}
+diff --git a/src/app/api/qq/login/complete/route.ts b/src/app/api/qq/login/complete/route.ts
+new file mode 100644
+index e69de29..59f18c8 100644
+--- /dev/null
++++ b/src/app/api/qq/login/complete/route.ts
+@@ -0,0 +1,6 @@
++import { randomBytes } from "node:crypto";
++export const runtime = "nodejs";
++export function GET() {
++  const nonce = randomBytes(24).toString("base64");
++  return new Response(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QQ 授权</title><style>html,body{margin:0;height:100%;background:#071016;display:grid;place-content:center}.orbit{width:52px;height:52px;border:1px solid #d7bc8930;border-top-color:#d7bc89;border-radius:50%;animation:spin 1.4s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.orbit{animation:none}}</style><div class="orbit" role="status" aria-label="请返回应用查看 QQ 授权结果"></div><script nonce="${nonce}">history.replaceState(null,'','/api/qq/login/complete');setTimeout(()=>window.close(),900)</script></html>`, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "Content-Security-Policy": `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; frame-ancestors 'none'; base-uri 'none';` } });
++}
+diff --git a/src/app/api/qq/avatar/route.ts b/src/app/api/qq/avatar/route.ts
+new file mode 100644
+index e69de29..277274b 100644
+--- /dev/null
++++ b/src/app/api/qq/avatar/route.ts
+@@ -0,0 +1,19 @@
++import type { NextRequest } from "next/server";
++import { SESSION_COOKIE, findUser } from "@/lib/server/session";
++import { qqOAuthAvatar } from "@/lib/music/providers/qq-oauth";
++export const runtime = "nodejs";
++export async function GET(request: NextRequest) {
++  try {
++    const owner = findUser(request.cookies.get(SESSION_COOKIE)?.value), source = owner && qqOAuthAvatar(owner);
++    if (!source) return new Response(null, { status: 404 });
++    const url = new URL(source);
++    if (url.protocol !== "https:" || url.port || url.username || url.password || !["qq.com", "qlogo.cn", "gtimg.cn", "qpic.cn"].some(host => url.hostname === host || url.hostname.endsWith("." + host))) throw new Error("source");
++    const result = await fetch(url, { redirect: "error", signal: AbortSignal.any([request.signal, AbortSignal.timeout(6000)]), cache: "no-store" });
++    const type = result.headers.get("content-type")?.split(";")[0];
++    if (!result.ok || !["image/png", "image/jpeg", "image/webp"].includes(type || "")) throw new Error("type");
++    const reader = result.body?.getReader(); if (!reader) throw new Error("empty");
++    let size = 0; const chunks: Uint8Array[] = [];
++    try { for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > 512 * 1024) { await reader.cancel(); throw new Error("size"); } chunks.push(value); } } finally { reader.releaseLock(); }
++    return new Response(Buffer.concat(chunks), { headers: { "Content-Type": type!, "Cache-Control": "private, max-age=60", Vary: "Cookie", "X-Content-Type-Options": "nosniff" } });
++  } catch { return new Response(null, { status: 502, headers: { "Cache-Control": "no-store" } }); }
++}

@@ -1,0 +1,26 @@
+[
+  {
+    "fixture": "synthetic WAV with RIFF tags",
+    "tagTitle": "EARFQUAKE",
+    "index": 1,
+    "actual": {
+      "isLocal": true,
+      "playing": true,
+      "time": 4.555106
+    }
+  },
+  {
+    "fixture": "synthetic WAV with RIFF tags",
+    "tagTitle": "I THINK",
+    "index": 2,
+    "actual": {
+      "isLocal": true,
+      "playing": true,
+      "time": 2.758755
+    }
+  },
+  {
+    "sameFilenameDifferentTags": true,
+    "errors": []
+  }
+]

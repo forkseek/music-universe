@@ -1,8 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { contentSecurityPolicy, frameAncestorSources } from "@/lib/server/security-policy";
+import { contentSecurityPolicy, frameAncestorSources, universeContentSecurityPolicy } from "@/lib/server/security-policy";
+import nextConfig from "../next.config";
 
 const nonce = "abcdefghijklmnopqrstuvwx12345678";
 describe("document security policy", () => {
+  it("excludes authorization callbacks and media tickets from development request logs", () => {
+    const logging = nextConfig.logging;
+    if (!logging || typeof logging.incomingRequests !== "object") throw new Error("Sensitive request logging must be filtered");
+    const filters = logging.incomingRequests.ignore ?? [];
+    for (const url of ["/api/qq/login/callback?code=fixture&state=fixture", "/api/music/audio?ticket=fixture", "/api/qq/audio?ticket=fixture"]) {
+      expect(filters.some(pattern => pattern.test(url))).toBe(true);
+    }
+    expect(filters.some(pattern => pattern.test("/api/health"))).toBe(false);
+  });
+  it("gives only the universe build same-origin embedding and external user media without inline scripts", () => {
+    const policy = universeContentSecurityPolicy();
+    expect(policy).toContain("media-src 'self' blob: data: https:");
+    expect(policy).toContain("frame-ancestors 'self'");
+    expect(policy).toContain("script-src 'self'");
+    expect(policy).not.toContain("'unsafe-eval'");
+    expect(policy).not.toMatch(/script-src[^;]*unsafe-inline/);
+    expect(contentSecurityPolicy(nonce, false)).toContain("frame-ancestors 'none'");
+  });
   it("allows only nonce scripts in production while retaining the local scene resources", () => {
     const policy = contentSecurityPolicy(nonce, false);
     const scripts = policy.split(";").find((part) => part.includes("script-src"))!;

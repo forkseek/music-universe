@@ -1,0 +1,60 @@
+/* 音乐大厅（#hall）的整体背景音乐控件。
+   音频作用域是整个大厅界面：它由 StagedHome 渲染，与 ImmersiveHall 平级，
+   不隶属于大厅内部任何局部组件。 */
+
+.mw-hall-bgm {
+  position: fixed;
+  z-index: 30;
+  right: 26px;
+  bottom: 22px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.mw-hall-bgm[data-active="false"] { display: none; }
+
+.mw-hall-bgm-toggle {
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 1px solid #ffe6ad59;
+  border-radius: 50%;
+  background: #1d140bcc;
+  color: #ffecc2;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  backdrop-filter: blur(6px);
+  transition: border-color .25s, background .25s, color .25s;
+}
+
+.mw-hall-bgm-toggle:hover,
+.mw-hall-bgm-toggle:focus-visible {
+  border-color: #fff2c9;
+  background: #33230fd9;
+  color: #fff8e2;
+  outline: none;
+}
+
+.mw-hall-bgm-toggle.is-muted { color: #ffecc273; }
+.mw-hall-bgm-toggle.is-muted span { text-decoration: line-through; }
+
+.mw-hall-bgm-hint {
+  pointer-events: none;
+  font-size: 12px;
+  letter-spacing: .04em;
+  color: #ffecc2b3;
+  text-shadow: 0 2px 12px #28120999;
+}
+
+@media (max-width: 640px) {
+  .mw-hall-bgm { right: 16px; bottom: 16px; }
+  .mw-hall-bgm-toggle { width: 38px; height: 38px; font-size: 15px; }
+  .mw-hall-bgm-hint { display: none; }
+}

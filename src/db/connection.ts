@@ -6,12 +6,26 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import * as schema from "./schema";
 
+/**
+ * WAL keeps readers out of the writer's way, but it needs a shared-memory `-shm` file and reliable
+ * POSIX advisory locks. A network-backed volume (CloudBase CFS, NFS) guarantees neither, so a
+ * deployment on one must fall back to a rollback journal or risk corrupting the library.
+ * Unset keeps the existing local behaviour. The allowlist also keeps the value out of the SQL text.
+ */
+const JOURNAL_MODES = ["WAL", "DELETE", "TRUNCATE", "PERSIST"] as const;
+export function journalMode(value = process.env.SQLITE_JOURNAL_MODE): string {
+  const mode = (value ?? "").trim().toUpperCase();
+  if (!mode) return "WAL";
+  if (!(JOURNAL_MODES as readonly string[]).includes(mode)) throw new Error(`SQLITE_JOURNAL_MODE 取值非法：仅支持 ${JOURNAL_MODES.join(" / ")}。`);
+  return mode;
+}
+
 export function openDatabase(filename: string) {
   if (filename !== ":memory:") mkdirSync(path.dirname(filename), { recursive: true });
   const sqlite = new Database(filename, { timeout: 5_000 });
   try {
     sqlite.pragma("foreign_keys = ON");
-    sqlite.pragma("journal_mode = WAL");
+    sqlite.pragma(`journal_mode = ${journalMode()}`);
     sqlite.pragma("synchronous = FULL");
     const db = drizzle(sqlite, { schema });
     migrate(db, { migrationsFolder: path.join(process.cwd(), "src/db/migrations") });

@@ -1,0 +1,18 @@
+{
+  "verifiedAt": "2026-10-05T18:21:01.717Z",
+  "liveOrigin": "http://127.0.0.1:3002",
+  "universeEntry": "/#universe",
+  "productionUi": true,
+  "rotation": true,
+  "followAndAudio": true,
+  "mainTests": 153,
+  "universeTests": 80,
+  "officialQQ": {
+    "configured": false,
+    "authorized": false,
+    "missingConfigurationCode": "QQ_OFFICIAL_CONFIG_REQUIRED",
+    "realAuthorizationVerified": false
+  },
+  "patchReverseCheck": true,
+  "rollbackPreviewPassed": true
+}

@@ -1,0 +1,76 @@
+[
+  {
+    "defaultPlayback": {
+      "src": "http://127.0.0.1:5188/mw/api/music/audio?ticket=PhFFdAHyykFV2pF-4IDHmOYQiaNbGKDh",
+      "time": 4.649256,
+      "paused": false,
+      "ready": 4
+    },
+    "scene": {
+      "album": "netease:album:278949442",
+      "cover": "/mw/api/music/album/cover?provider=netease&id=278949442",
+      "planet": "netease:album:278949442:1:1:0:2727829503",
+      "index": "0"
+    },
+    "albumFetches": [
+      {
+        "status": 200,
+        "album": "DON'T TAP THE GLASS",
+        "count": 10,
+        "index": 0
+      }
+    ]
+  },
+  {
+    "sameAlbumNextTrack": {
+      "album": "netease:album:278949442",
+      "cover": "/mw/api/music/album/cover?provider=netease&id=278949442",
+      "planet": "netease:album:278949442:1:2:1:2727830332",
+      "index": "1"
+    },
+    "albumRequests": 1,
+    "cache": true
+  },
+  {
+    "crossAlbumSearch": {
+      "album": "netease:album:79190754",
+      "cover": "/mw/api/music/album/cover?provider=netease&id=79190754",
+      "planet": "netease:album:79190754:1:2:1:1365879365",
+      "index": "1"
+    },
+    "audio": {
+      "src": "http://127.0.0.1:5188/mw/api/music/audio?ticket=i8SUhoDN4GV2aNFiTAGUb463oD2HRLoO",
+      "time": 6.266485,
+      "paused": false,
+      "ready": 4
+    },
+    "rms": 0.07965531067975244,
+    "response": {
+      "status": 200,
+      "album": "IGOR",
+      "count": 12,
+      "index": 1
+    },
+    "cameraAndClockPreserved": {
+      "beforeScene": {
+        "generation": "0",
+        "time": 8.3933
+      },
+      "afterScene": {
+        "generation": "0",
+        "time": 13.183
+      }
+    }
+  },
+  {
+    "igorNextTrack": {
+      "album": "netease:album:79190754",
+      "cover": "/mw/api/music/album/cover?provider=netease&id=79190754",
+      "planet": "netease:album:79190754:1:3:2:1365875710",
+      "index": "2"
+    },
+    "albumRequests": 2,
+    "cache": true,
+    "errors": []
+  }
+]

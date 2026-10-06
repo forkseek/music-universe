@@ -28,3 +28,13 @@ export function contentSecurityPolicy(nonce: string, development: boolean, paren
     "frame-ancestors " + (parents.length ? parents.join(" ") : "'none'"),
   ].join("; ") + ";";
 }
+
+/** Trusted Vite bundles have no Next nonce. This policy applies only to their static subpage. */
+export function universeContentSecurityPolicy() {
+  return [
+    "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' blob: data: https:", "font-src 'self' data:", "media-src 'self' blob: data: https:",
+    "connect-src 'self' https:", "worker-src 'self' blob:", "object-src 'none'",
+    "base-uri 'self'", "form-action 'self'", "frame-src 'none'", "frame-ancestors 'self'",
+  ].join("; ") + ";";
+}

@@ -1,0 +1,26 @@
+# Dockerfile-specific allowlist. No local credentials, database, test outputs,
+# Windows modules, debug worktree, or unrelated files enter the image.
+**
+!package.json
+!package-lock.json
+!.npmrc
+!next.config.ts
+!next-env.d.ts
+!tsconfig.json
+!postcss.config.mjs
+!src/
+!src/**
+!scripts/
+!scripts/**
+!integrations/
+!integrations/mineradio/
+!integrations/mineradio/**
+!public/
+!public/**
+**/node_modules/**
+**/.env*
+**/.music-vault-key
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.sqlite*

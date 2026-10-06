@@ -1,0 +1,270 @@
+[
+  {
+    "automaticPlaybackFollow": true,
+    "input": "synthetic tagged WAV; live IGOR album metadata",
+    "first": {
+      "target": "netease:album:79190754:1:2:1:1365879365",
+      "locked": "true",
+      "zoom": 1,
+      "renderedZoom": 1.000954,
+      "camera": [
+        5.399603,
+        2.936757,
+        73.176535
+      ],
+      "quaternion": [
+        -0.004330162149763596,
+        0.0013251137310480636,
+        0.000005738016155253774,
+        0.9999897468156521
+      ],
+      "center": [
+        5.201374962916558,
+        2.288980687526572,
+        -1.6192086852285703
+      ],
+      "planet": [
+        5.201374962916558,
+        2.288980687526572,
+        -1.6192086852285703
+      ],
+      "projectedError": 0,
+      "time": 9.6225,
+      "mode": "orbit"
+    },
+    "moved": {
+      "target": "netease:album:79190754:1:2:1:1365879365",
+      "locked": "true",
+      "zoom": 1,
+      "renderedZoom": 1.000829,
+      "camera": [
+        4.691835,
+        6.215408,
+        76.064893
+      ],
+      "quaternion": [
+        -0.004917229235714069,
+        0.01528870884725215,
+        0.00007518778331584143,
+        0.9998710269755919
+      ],
+      "center": [
+        2.405316990327807,
+        5.479817462949665,
+        1.314017644366794
+      ],
+      "planet": [
+        2.405316990327807,
+        5.479817462949665,
+        1.314017644366794
+      ],
+      "projectedError": 5.684341886080802e-14,
+      "time": 16.1225,
+      "mode": "orbit"
+    }
+  },
+  {
+    "zoomPreservesMovingLookPoint": true,
+    "zoomed": {
+      "target": "netease:album:79190754:1:2:1:1365879365",
+      "locked": "true",
+      "zoom": 0.876341,
+      "renderedZoom": 0.877139,
+      "camera": [
+        2.606865,
+        6.307759,
+        68.045916
+      ],
+      "quaternion": [
+        -0.004965829405086564,
+        0.017524436639675376,
+        0.00008703780236342288,
+        0.9998340997801599
+      ],
+      "center": [
+        0.3099741727749692,
+        5.656682460949693,
+        2.542975199324585
+      ],
+      "planet": [
+        0.3099741727749692,
+        5.656682460949693,
+        2.542975199324585
+      ],
+      "projectedError": 0,
+      "time": 19.0225,
+      "mode": "orbit"
+    }
+  },
+  {
+    "dragKeepsLock": true,
+    "dragged": {
+      "target": "netease:album:79190754:1:2:1:1365879365",
+      "locked": "true",
+      "zoom": 0.876341,
+      "renderedZoom": 0.87713,
+      "camera": [
+        -19.55711,
+        11.787039,
+        67.047386
+      ],
+      "quaternion": [
+        -0.06422673349913538,
+        -0.12430234271985847,
+        -0.008063110543529057,
+        0.9901307189188451
+      ],
+      "center": [
+        -3.4908279612408624,
+        3.3191622941254644,
+        4.067865277015517
+      ],
+      "planet": [
+        -3.4908279612408624,
+        3.3191622941254644,
+        4.067865277015517
+      ],
+      "projectedError": 5.684341886080802e-14,
+      "time": 24.9225,
+      "mode": "orbit"
+    }
+  },
+  {
+    "releaseFreezes3DLookPointAndKeepsAudio": true,
+    "released": {
+      "target": "",
+      "locked": "false",
+      "zoom": 0.876341,
+      "renderedZoom": 0.877085,
+      "camera": [
+        -19.604375,
+        11.099104,
+        67.274036
+      ],
+      "quaternion": [
+        -0.06427298027348856,
+        -0.12145680652107366,
+        -0.007881404067443129,
+        0.9904822621462697
+      ],
+      "center": [
+        -3.9011591166289787,
+        2.6285954766622135,
+        4.206839984273341
+      ],
+      "planet": null,
+      "projectedError": null,
+      "time": 26.3225,
+      "mode": "orbit"
+    },
+    "afterRelease": {
+      "target": "",
+      "locked": "false",
+      "zoom": 0.876341,
+      "renderedZoom": 0.877008,
+      "camera": [
+        -18.822274,
+        11.092324,
+        67.458571
+      ],
+      "quaternion": [
+        -0.06427445932924546,
+        -0.11533151444236195,
+        -0.007478553489747381,
+        0.9912171845221738
+      ],
+      "center": [
+        -3.9011591166289787,
+        2.6285954766622135,
+        4.206839984273341
+      ],
+      "planet": null,
+      "projectedError": null,
+      "time": 28.8225,
+      "mode": "orbit"
+    }
+  },
+  {
+    "pauseResumeRetainsRelease": true
+  },
+  {
+    "newSongRetainsManualRelease": true,
+    "trackIndex": "2"
+  },
+  {
+    "keyboardRestoresCurrentSong": true,
+    "resumed": {
+      "target": "netease:album:79190754:1:3:2:1365875710",
+      "locked": "true",
+      "zoom": 0.876341,
+      "renderedZoom": 0.876836,
+      "camera": [
+        -20.054879,
+        11.693594,
+        65.605967
+      ],
+      "quaternion": [
+        -0.0639621660085508,
+        -0.10387728435071507,
+        -0.006694365549434327,
+        0.9925087085690008
+      ],
+      "center": [
+        -6.600095804777891,
+        3.2831654223001294,
+        2.0323494180472315
+      ],
+      "planet": [
+        -6.600095804777891,
+        3.2831654223001294,
+        2.0323494180472315
+      ],
+      "projectedError": 0,
+      "time": 44.122,
+      "mode": "orbit"
+    }
+  },
+  {
+    "switchingTracksRetargetsAutomatically": true,
+    "switched": {
+      "target": "netease:album:79190754:1:2:1:1365879365",
+      "locked": "true",
+      "zoom": 0.876341,
+      "renderedZoom": 0.876759,
+      "camera": [
+        -12.722015,
+        3.856394,
+        68.046334
+      ],
+      "quaternion": [
+        -0.06371170711007206,
+        -0.09981102042209668,
+        -0.006404320104114757,
+        0.9929438872682708
+      ],
+      "center": [
+        0.2110768364642681,
+        -4.516990896376624,
+        4.365609281272459
+      ],
+      "planet": [
+        0.2110768364642681,
+        -4.516990896376624,
+        4.365609281272459
+      ],
+      "projectedError": 0,
+      "time": 57.022,
+      "mode": "orbit"
+    }
+  },
+  {
+    "mobileControlAccessible": true,
+    "errors": []
+  },
+  {
+    "unidentifiedSongDoesNotTrackPreviousPlanet": true
+  },
+  {
+    "resolvedNextSongRestoresAutomaticFollow": true
+  }
+]

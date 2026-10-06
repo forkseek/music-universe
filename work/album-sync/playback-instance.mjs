@@ -1,0 +1,10 @@
+import {readFile,writeFile,copyFile} from 'node:fs/promises';
+const root='C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe';
+const file=root+'/src/hooks/useAudioPlayback.ts';
+let source=await readFile(file,'utf8');
+if(!source.includes('  id: string\n  title: string') || !source.includes('    trackRef.current = info\n    setTrack(info)')) throw new Error('Audio engine source changed');
+source=source.replace('  id: string\n  title: string','  id: string\n  /** Distinguishes separate loads of the same platform song or filename. */\n  playbackInstance?: number\n  title: string');
+source=source.replace('    trackRef.current = info\n    setTrack(info)','    const nextInfo = { ...info, playbackInstance: generation }\n    trackRef.current = nextInfo\n    setTrack(nextInfo)');
+await writeFile(file,source);
+await copyFile(new URL('./usePlaybackAlbum.ts',import.meta.url),root+'/src/hooks/usePlaybackAlbum.ts');
+console.log('Separate playback instances now invalidate earlier album requests.');

@@ -9,50 +9,35 @@ async function waitForMist(page: Page) {
 
 async function hall(page: Page) {
   await expect(page.locator(".mw-hall-ready")).toBeVisible();
-  await expect(page.locator("[data-portal]")).toHaveCount(7);
+  await expect(page.locator("[data-portal]")).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "进入专辑宇宙" })).toBeVisible();
   await waitForMist(page);
 }
 
-test("wheel advances and reverses the continuous film without scrolling the page", async ({ page }) => {
+test("hall immediately offers only the album universe without film or music controls", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/");
-  const canvas = page.locator(".mw-hall-canvas.is-painted");
-  await expect(canvas).toBeVisible();
-  const firstFrame = await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL());
-  const opacity = () => page.locator(".mw-interactive-hall").evaluate((element) => Number((element as HTMLElement).style.getPropertyValue("--intro-opacity")));
-  await page.mouse.move(800, 450);
-  for (let step = 0; step < 5; step++) {
-    await page.mouse.wheel(0, 120);
-    await page.waitForTimeout(160);
-  }
-  await expect.poll(opacity).toBeLessThan(.8);
-  expect(await canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())).not.toBe(firstFrame);
-  for (let step = 0; step < 6; step++) {
-    await page.mouse.wheel(0, -120);
-    await page.waitForTimeout(160);
-  }
-  await expect.poll(opacity).toBeGreaterThan(.98);
-  await expect.poll(() => canvas.evaluate((element) => (element as HTMLCanvasElement).toDataURL())).toBe(firstFrame);
+  await hall(page);
+  await expect(page.getByRole("button")).toHaveCount(0);
+  await expect(page.getByRole("link")).toHaveCount(1);
+  await expect(page.locator(".mw-hall-film, .mw-hall-canvas, .mw-hall-scrubber, .mw-hall-music-control")).toHaveCount(0);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  const position = await page.getByTestId("hall-universe-entry").evaluate((element) => ({ left: (element as HTMLElement).style.left, top: (element as HTMLElement).style.top, width: (element as HTMLElement).style.width }));
+  expect(position).toEqual({ left: "42.9%", top: "43.1%", width: "14%" });
+  await page.mouse.wheel(0, 120);
+  await page.mouse.wheel(0, -120);
   expect(await page.evaluate(() => scrollY)).toBe(0);
   await expect(page.getByRole("slider")).toHaveCount(0);
-  const timeline = await (await page.request.get("/media/music-world-continuous/timeline.json")).json();
-  expect(timeline.fps).toBe(60);
-  expect(timeline.frameCount).toBeGreaterThan(700);
-  await page.getByRole("button", { name: "自动漫游" }).click();
-  await expect(page.locator(".mw-hall-ready")).toBeVisible({ timeout: 35_000 });
-  await hall(page);
-  await page.mouse.wheel(0, -120);
-  await expect(page.locator(".mw-hall-arrival .mw-hall-canvas.is-painted")).toBeVisible();
+  await expect(page).toHaveURL(/\/$/u);
   expect(errors).toEqual([]);
 });
 
-test("all seven icons use mist transitions and return to the final frame", async ({ page }) => {
+test("existing module hash routes still open directly and return to the simplified hall", async ({ page }) => {
   await page.goto("/#hall");
   await hall(page);
   for (const id of ["world", "library", "import", "demo", "journey", "guide", "qq"]) {
-    await page.locator(`[data-portal="${id}"]`).click();
-    await expect(page.locator(".mw-fog-transition")).toBeVisible();
+    await page.goto(`/#${id}`);
     await expect(page).toHaveURL(new RegExp(`#${id}$`, "u"));
     await waitForMist(page);
     await expect(page.locator("main")).toHaveAttribute("data-module", id);
@@ -60,11 +45,9 @@ test("all seven icons use mist transitions and return to the final frame", async
     await expect(page).toHaveURL(/#hall$/u);
     await hall(page);
   }
-  await page.getByRole("button", { name: "重新唤醒" }).click();
-  await expect(page.locator(".mw-hall-arrival .mw-hall-canvas.is-painted")).toBeVisible();
 });
 
-test("landscape keeps all icon labels and touch targets visible", async ({ page }) => {
+test("landscape keeps the single album entry label and touch target visible", async ({ page }) => {
   for (const size of [{ width: 844, height: 390 }, { width: 667, height: 375 }, { width: 568, height: 320 }]) {
     await page.setViewportSize(size);
     await page.goto("/#hall");
@@ -95,7 +78,7 @@ test("rotating from landscape recenters the phone panorama", async ({ page }) =>
       return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.closest("[data-portal]") === element;
     }))).toBe(true);
     const viewport = page.locator(".mw-hall-panorama");
-    await expect.poll(() => viewport.evaluate((element) => Math.abs(element.scrollLeft - Math.max(0, element.scrollWidth * .425 - element.clientWidth / 2)))).toBeLessThan(1);
+    await expect.poll(() => viewport.evaluate((element) => Math.abs(element.scrollLeft - Math.max(0, element.scrollWidth * .429 - element.clientWidth / 2)))).toBeLessThan(1);
     const center = await viewport.evaluate((element) => {
       const initial = element.scrollLeft;
       element.scrollLeft = initial + 30;
@@ -106,21 +89,11 @@ test("rotating from landscape recenters the phone panorama", async ({ page }) =>
   }
 });
 
-test("phone swipes drive the film and the final icons remain usable", async ({ browser, baseURL }) => {
+test("phone tap and browser back use the album doorway without requiring the opening film", async ({ browser, baseURL }) => {
   const context = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
   try {
     const page = await context.newPage();
     await page.goto("/");
-    await expect(page.locator(".mw-hall-canvas.is-painted")).toBeVisible();
-    const touch = await context.newCDPSession(page);
-    await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: 200, y: 550 }] });
-    for (let step = 1; step <= 20; step++) {
-      await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: 200, y: 550 - step * 14 }] });
-      await page.waitForTimeout(20);
-    }
-    await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-    await expect.poll(() => page.locator(".mw-hall-caption").evaluate((element) => Number(getComputedStyle(element).opacity))).toBeLessThan(.8);
-    await page.getByRole("button", { name: "进入大厅" }).click();
     await hall(page);
     await page.waitForTimeout(700);
     const hits = await page.locator("[data-portal]").evaluateAll((elements) => elements.every((element) => {
@@ -129,6 +102,13 @@ test("phone swipes drive the film and the final icons remain usable", async ({ b
     }));
     expect(hits).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth && scrollY === 0)).toBe(true);
+    const doorway = page.getByRole("link", { name: "进入专辑宇宙" });
+    const destination = (await doorway.getAttribute("href"))!;
+    await page.route(destination, (route) => route.fulfill({ contentType: "text/html", body: "<title>Album universe destination fixture</title>" }));
+    await doorway.tap();
+    await expect(page).toHaveURL(destination);
+    await page.goBack();
+    await hall(page);
   } finally { await context.close(); }
 });
 
@@ -166,19 +146,15 @@ test("a real imported playlist opens its map, guide and saved five-stop journey"
   expect(errors).toEqual([]);
 });
 
-test("reduced motion and a missing frame renderer both keep navigation available", async ({ page }) => {
+test("reduced motion and an unavailable background keep the album entry available", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await hall(page);
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.route("**/music-world-continuous/timeline.json", (route) => route.abort());
+  await page.route("**/scene-hall-2k.webp", (route) => route.abort());
   await page.goto("/");
-  await expect(page.locator(".mw-interactive-hall.uses-video")).toBeVisible();
-  await page.mouse.move(800, 450);
-  await page.mouse.wheel(0, 120);
-  await expect.poll(() => page.locator(".mw-hall-film").evaluate((element) => (element as HTMLVideoElement).currentTime)).toBeGreaterThan(.05);
-  await page.getByRole("button", { name: "进入大厅" }).click();
   await hall(page);
+  await expect(page.locator(".mw-hall-final")).toHaveCSS("background-image", /scene-hall.webp/u);
 });
 
 test("Demo opens a separate real world and unavailable official access offers file import", async ({ page }) => {
@@ -194,7 +170,7 @@ test("Demo opens a separate real world and unavailable official access offers fi
   await expect(page.getByLabel("选择歌单文件")).toBeVisible();
   await page.getByRole("button", { name: "回到音乐大厅" }).click();
   await hall(page);
-  await page.locator('[data-portal="demo"]').click();
+  await page.goto("/#demo");
   await waitForMist(page);
   await page.getByRole("button", { name: "打开 Demo 世界" }).click();
   await expect(page).toHaveURL(/\/world\/[\w-]+$/u);

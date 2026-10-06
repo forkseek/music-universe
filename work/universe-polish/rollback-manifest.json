@@ -1,0 +1,403 @@
+{
+  "version": 1,
+  "createdAt": "2026-10-05T18:22:22.914Z",
+  "roots": {
+    "main": "C:\\Users\\IKUN\\Documents\\ChatGPT\\腾讯黑客松",
+    "universe": "C:\\Users\\IKUN\\Documents\\Codex\\2026-10-04\\referenced-chatgpt-conversation-this-is-an-3\\outputs\\music-universe"
+  },
+  "files": [
+    {
+      "root": "main",
+      "relative": ".env.example",
+      "action": "restore",
+      "afterSha256": "17c05c5537e9247def95f80856f3ddf856fed00cc16c2dd5429cb625b9ad9924",
+      "backup": "backup/main/.env.example",
+      "beforeSha256": "72e28fc7727fd07f1c2af5fe416dbf983995ea9f3cbce57d431e55b0f7877c7a"
+    },
+    {
+      "root": "main",
+      "relative": "eslint.config.mjs",
+      "action": "restore",
+      "afterSha256": "4dbd02e2f88ca70f2e893129e31832aaf2db6f09a55534bf02fb40f7be0a4f3f",
+      "backup": "backup/main/eslint.config.mjs",
+      "beforeSha256": "b7de04f2c8b468bfe734dd97ff2d9882f811daf6c95934f96492a5ab8bd14b36"
+    },
+    {
+      "root": "main",
+      "relative": "next.config.ts",
+      "action": "restore",
+      "afterSha256": "8e67abfdcd6b4b17441282d2c39ac12e7343bb9814ad7955c0417c606f23ea62",
+      "backup": "backup/main/next.config.ts",
+      "beforeSha256": "daa9e0e03eac2fcba4b801bedb6dcd156c9fd1b3b76e5ee9bb2797929b35d37e"
+    },
+    {
+      "root": "main",
+      "relative": "package.json",
+      "action": "restore",
+      "afterSha256": "548b77cf6cdb23fcb79f0f38ff28280470fe349211abd14bad2969e70d314ad1",
+      "backup": "backup/main/package.json",
+      "beforeSha256": "b8449d60dd0cfda3fac56a9ff6f46f331310a0740e55411d90ea31b775a50344"
+    },
+    {
+      "root": "main",
+      "relative": "src/app/api/qq/login/qr/route.ts",
+      "action": "restore",
+      "afterSha256": "cd32c745a6aff4dc6d2166998fa50d59427235a9160ef02f858661804e82eb11",
+      "backup": "backup/main/src/app/api/qq/login/qr/route.ts",
+      "beforeSha256": "eabd209d40fe4bc1d2efee2d28f35cb772dc59fb9cc2e3d41c21b5d7d537bf9b"
+    },
+    {
+      "root": "main",
+      "relative": "src/app/layout.tsx",
+      "action": "restore",
+      "afterSha256": "beb01d0245392e2c3906d207c7c5f19ec5952ba20d48fff023698a74cb8c392e",
+      "backup": "backup/main/src/app/layout.tsx",
+      "beforeSha256": "0e019fd1eed65951a2b69c6cdabe8e69a7281dadc197d0fa3ad7236fb61de6f4"
+    },
+    {
+      "root": "main",
+      "relative": "src/components/home/hall-modules.ts",
+      "action": "restore",
+      "afterSha256": "fb5287d90eb33f4c6bad76f136c650dc417ab8c4154b05aea1375e81302fc34f",
+      "backup": "backup/main/src/components/home/hall-modules.ts",
+      "beforeSha256": "118385ff0e9c0530582977cc30890a388d90329f0c96a1030c59eca2892a2821"
+    },
+    {
+      "root": "main",
+      "relative": "src/components/home/HallUniversePortal.tsx",
+      "action": "restore",
+      "afterSha256": "bff7d7fd8c636dd838a1ae61fd4da4e4738db683ca701ad4ce04d28f45786b5c",
+      "backup": "backup/main/src/components/home/HallUniversePortal.tsx",
+      "beforeSha256": "4d432bed528a8764f5340763a613242042611785baee25dd67fb2a310f68e754"
+    },
+    {
+      "root": "main",
+      "relative": "src/components/home/ImmersiveHall.tsx",
+      "action": "restore",
+      "afterSha256": "83326295009ab167c889c31e4638744dadb32a63ed735ede1bb7420e50d53255",
+      "backup": "backup/main/src/components/home/ImmersiveHall.tsx",
+      "beforeSha256": "13a404d2519a36383e25a0bc565d83b724688484713d65731848d9ccd1434f25"
+    },
+    {
+      "root": "main",
+      "relative": "src/components/home/SceneTransition.tsx",
+      "action": "restore",
+      "afterSha256": "52f300bf49c1c732b7dcab5dd1b1eac3623e0c7adb185aac904053b381f050bc",
+      "backup": "backup/main/src/components/home/SceneTransition.tsx",
+      "beforeSha256": "c1d3130d5ca0f9c73949baa0a3dec48fb309cf5d76ef25a39ee7336bb8faa40b"
+    },
+    {
+      "root": "main",
+      "relative": "src/components/home/StagedHome.tsx",
+      "action": "restore",
+      "afterSha256": "c07ad6a5b49e66200a9a6e5904eaa78c23e90796511cd6d756469f6397ae7e79",
+      "backup": "backup/main/src/components/home/StagedHome.tsx",
+      "beforeSha256": "72cd81bb20ce478efcfca739bf685b8a989ad733aec3d31bdd2074aaf90ab7ee"
+    },
+    {
+      "root": "main",
+      "relative": "src/components/player/MusicPlayer.tsx",
+      "action": "restore",
+      "afterSha256": "cfb2edda21a5d1c85b50da4bd9a0e1c2cc7c58fd16a60b6a288c6e05c3dbd211",
+      "backup": "backup/main/src/components/player/MusicPlayer.tsx",
+      "beforeSha256": "466594b45e31b426f03cae75f4c0d29d9905ec9faa7bea6b4e7fd8af4c1d65a0"
+    },
+    {
+      "root": "main",
+      "relative": "src/lib/music/platforms/login.ts",
+      "action": "restore",
+      "afterSha256": "84da00d90c9475599699856b3da8ed036290a7ccb7538b27212215baf640766f",
+      "backup": "backup/main/src/lib/music/platforms/login.ts",
+      "beforeSha256": "231600a776ed5ef7def35af609e0ce7d423e61c8d2d806c9e000e9d4842b23c9"
+    },
+    {
+      "root": "main",
+      "relative": "src/lib/music/platforms/types.ts",
+      "action": "restore",
+      "afterSha256": "debc9e98fc971309f8e654d9c3b1b429bad7d3203725e8e6b6559b2b428bd042",
+      "backup": "backup/main/src/lib/music/platforms/types.ts",
+      "beforeSha256": "bb42ebf6d3a1b529e924466665b20185b1e47733411985a128f02309d39073fd"
+    },
+    {
+      "root": "main",
+      "relative": "src/lib/music/providers/qq-account.ts",
+      "action": "restore",
+      "afterSha256": "da69aac0826796422769a70d5eaa72ce36a121297589d8b34cca36f6e894180f",
+      "backup": "backup/main/src/lib/music/providers/qq-account.ts",
+      "beforeSha256": "130e9680fc44dae18d428e293daa38cadaebb719d1e76790e28671fdb0c259b0"
+    },
+    {
+      "root": "main",
+      "relative": "src/lib/music/providers/qq-profile.ts",
+      "action": "restore",
+      "afterSha256": "aa2a9577b5f518a7981890b12f02a80609984624e4de44d2faea5b9164dc0102",
+      "backup": "backup/main/src/lib/music/providers/qq-profile.ts",
+      "beforeSha256": "c1e6a9fcf1cad259c0a05c9c9569ae3950e33bb438882076f62c89eb6421a723"
+    },
+    {
+      "root": "main",
+      "relative": "src/lib/music/providers/radiohand-browser.ts",
+      "action": "restore",
+      "afterSha256": "005a825b28ae08585379a0e2d046f73803ce6e6776f2fc454c74f2984cfa5617",
+      "backup": "backup/main/src/lib/music/providers/radiohand-browser.ts",
+      "beforeSha256": "614cd9123d413b970d3e27a4fd058427fc1b9cffea5695f80bf478e564fcc815"
+    },
+    {
+      "root": "main",
+      "relative": "src/lib/server/security-policy.ts",
+      "action": "restore",
+      "afterSha256": "70cdf057cece9dbcc0340e2a1f712e12f1f2316d49fd9eff6691c7be8c99518e",
+      "backup": "backup/main/src/lib/server/security-policy.ts",
+      "beforeSha256": "c1cb3d0715a7751b9d7b91ce3fe8daebcc60d91ee928618d5c9372173c35673d"
+    },
+    {
+      "root": "main",
+      "relative": "src/proxy.ts",
+      "action": "restore",
+      "afterSha256": "0f859b28720fd5ae1ed062a9852f9118d463e7bb54074f129504a6e7992ba880",
+      "backup": "backup/main/src/proxy.ts",
+      "beforeSha256": "f41ac4c706881a7401f068220d5f7ecf04c96e5194fba344a277de10e73e5e9d"
+    },
+    {
+      "root": "main",
+      "relative": "tests/music-platforms.test.ts",
+      "action": "restore",
+      "afterSha256": "3312326f0e8398806aa9d9277e8a360850b78f01979d43e44299cc1d473b5994",
+      "backup": "backup/main/tests/music-platforms.test.ts",
+      "beforeSha256": "254c68d86142b8e4420fde81f2800a93cbba29d65027e0b95f6d707a3b773c8e"
+    },
+    {
+      "root": "main",
+      "relative": "tests/qq-account-login.test.ts",
+      "action": "restore",
+      "afterSha256": "3f64feeef152167c1066bb3e1b4f06a78d5adcdfe887344b7f25462a282ca7b8",
+      "backup": "backup/main/tests/qq-account-login.test.ts",
+      "beforeSha256": "f94bdf52cfbf250f4b0c2e3270840b800d73495d7aaddbdc247dae08c7cad0c6"
+    },
+    {
+      "root": "main",
+      "relative": "tests/security-policy.test.ts",
+      "action": "restore",
+      "afterSha256": "820e1b41be67fe88ce41942feff67ce88ebb9b5463b7a65fde8d4fa0aeaaca9f",
+      "backup": "backup/main/tests/security-policy.test.ts",
+      "beforeSha256": "00d04066fe642300d0fc70f2f004f033eb93c583fe11ff83b5134022add24190"
+    },
+    {
+      "root": "main",
+      "relative": "scripts/sync-universe.mjs",
+      "action": "remove",
+      "afterSha256": "9cf6742e8522ce6b48be3ba69d5942d5ff717db295f0595e962f1c89e42b697e"
+    },
+    {
+      "root": "main",
+      "relative": "src/app/album-universe.css",
+      "action": "remove",
+      "afterSha256": "12d9d674fe4030de1a45384cf21230452c4466cfd7d99c4980e75cc317d926f0"
+    },
+    {
+      "root": "main",
+      "relative": "src/components/home/AlbumUniverseRoom.tsx",
+      "action": "remove",
+      "afterSha256": "83f11b74d42dc024a6c0ea0be90c8148e7263cde9640418f1e5b981472e79728"
+    },
+    {
+      "root": "main",
+      "relative": "src/lib/music/providers/qq-oauth.ts",
+      "action": "remove",
+      "afterSha256": "759f621d2bf816dcd8dca00c846bff2acb8d3c875bd2b9fcfaf48a05c81da9ac"
+    },
+    {
+      "root": "main",
+      "relative": "src/app/api/qq/login/callback/route.ts",
+      "action": "remove",
+      "afterSha256": "323afb1deced2b5d69a4f134e5e38a7664265b6665e8a3a56ebc778982f04f42"
+    },
+    {
+      "root": "main",
+      "relative": "src/app/api/qq/login/complete/route.ts",
+      "action": "remove",
+      "afterSha256": "25d0c56873acbaa5447276765d4e769e5c23a36933d66352d0c8f311514b1e7e"
+    },
+    {
+      "root": "main",
+      "relative": "src/app/api/qq/avatar/route.ts",
+      "action": "remove",
+      "afterSha256": "668df8d82dcd84414b963621b34d3f383d41e20faabe68361282e484e3c376c2"
+    },
+    {
+      "root": "universe",
+      "relative": "package.json",
+      "action": "restore",
+      "afterSha256": "d6345aa93dcacbb371b4b85753686c48d79c34efddfe2cc2dee228fbef8072ac",
+      "backup": "backup/universe/package.json",
+      "beforeSha256": "28fd352c7547d561a1ef87ff4d2b6c3172a75cbd142a8ac109fb10d3f4393c6f"
+    },
+    {
+      "root": "universe",
+      "relative": "src/App.tsx",
+      "action": "restore",
+      "afterSha256": "3883cf12d9274b251b40ca142ba88ba4ce2b9b1758784fb5d11e51d27b78ade0",
+      "backup": "backup/universe/src/App.tsx",
+      "beforeSha256": "3368c6a9e9fef9ccae1ee9c2f1933c479a749da8e768dcad6ac40f70e6f345a1"
+    },
+    {
+      "root": "universe",
+      "relative": "src/components/GalaxyScene.tsx",
+      "action": "restore",
+      "afterSha256": "2e9731b094b6323493d16512c0f3eb79fb3b5c1e94ec1239f1195d18aaf9ed4d",
+      "backup": "backup/universe/src/components/GalaxyScene.tsx",
+      "beforeSha256": "d907525709642c91fcd378499edf7bb2742d935fcbdea4247f0d2e1bca86e2c1"
+    },
+    {
+      "root": "universe",
+      "relative": "src/components/MusicSearch.tsx",
+      "action": "restore",
+      "afterSha256": "7be7ac29c284fb5fe05b4a0f27f5b8cdbde46791f19606e0fdf8b681e464bf8e",
+      "backup": "backup/universe/src/components/MusicSearch.tsx",
+      "beforeSha256": "6f9294596594bb077bc9fa29bc22d87a568ac8e3aa493e71323860288e43fd25"
+    },
+    {
+      "root": "universe",
+      "relative": "src/components/PlayerBar.tsx",
+      "action": "restore",
+      "afterSha256": "69963448415d98aded0b52c07ea32694b137849e56229f198081753c46a8a21a",
+      "backup": "backup/universe/src/components/PlayerBar.tsx",
+      "beforeSha256": "b5696ccc6a4491995f5cbb2203e0b16955943bc67f005fa6b83643d8f38d85c0"
+    },
+    {
+      "root": "universe",
+      "relative": "src/data/albums.ts",
+      "action": "restore",
+      "afterSha256": "483e3a0039105cc92b8dbc73cbd24978f48ba93154b2ff0be178d274516b13f0",
+      "backup": "backup/universe/src/data/albums.ts",
+      "beforeSha256": "3918b994216af973a9835f0b7db693ce5d536bea9359832d688f6f125a6075fe"
+    },
+    {
+      "root": "universe",
+      "relative": "src/glass-ui.css",
+      "action": "restore",
+      "afterSha256": "36301d56ff8111d2b3a4cbb18a0122440bf0341566c1210f7af2d7bbdd5f2f05",
+      "backup": "backup/universe/src/glass-ui.css",
+      "beforeSha256": "84a60fce8aaf79760c19a192f77d23fead22e1cd7bde295762e1adeed261c89c"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/explorationSession.ts",
+      "action": "restore",
+      "afterSha256": "b337a4d7ee27ed82b1df409713c5bf885e96340227db25174cdd957f9814b329",
+      "backup": "backup/universe/src/lib/explorationSession.ts",
+      "beforeSha256": "a1fe003293231ca6e0d29a8ace07794669b7f7e5fe91c512a40f3f32c38dcee6"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/musicPlatforms.ts",
+      "action": "restore",
+      "afterSha256": "87ab71fafb49e18146d38314c023832f1cefad94bb25cdc6bf43588569b6e6dc",
+      "backup": "backup/universe/src/lib/musicPlatforms.ts",
+      "beforeSha256": "b85c03de5dd3bf2d4e379d8373fd984f2a5c6482da9840b7aee68d1d189d83ef"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/musicWorld.ts",
+      "action": "restore",
+      "afterSha256": "6a6ad761fb0a3122f57522075e8e31d33cfc1d12d79be8bb8bccd78f1cb1c637",
+      "backup": "backup/universe/src/lib/musicWorld.ts",
+      "beforeSha256": "51c35971d0923f3de48b3ad01103e383c3b5e84985ed5412925e3d3bddb756c1"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/musicWorldClient.ts",
+      "action": "restore",
+      "afterSha256": "0c894401c5d166ae54a60eac38e03f58fcbdbfe77a34a3e5fae79123dbcd7a1e",
+      "backup": "backup/universe/src/lib/musicWorldClient.ts",
+      "beforeSha256": "bccf3aa7d0a7c5151f877f79fd14418466685a3ccb0c87c11d49dbf53fed999d"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/playHistory.ts",
+      "action": "restore",
+      "afterSha256": "33b5c44ee4ed3abd83d14a7b3a35c7136fd4c582be354b3aa2b48049a878250f",
+      "backup": "backup/universe/src/lib/playHistory.ts",
+      "beforeSha256": "d8a48a01d9cdcfed6be3d217fa97f6638b0dfc4e5ed95bf7d58251ab96da6934"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/spaceMaterials.ts",
+      "action": "restore",
+      "afterSha256": "1f730deeff3075485a7b6ada9b912463801a8fe35d23a7110f4b75b1b1dbb54d",
+      "backup": "backup/universe/src/lib/spaceMaterials.ts",
+      "beforeSha256": "dbd1845276455ee18c152dd03bf08b69d92e62088006b74992c4409891abc43d"
+    },
+    {
+      "root": "universe",
+      "relative": "tests/rotation.mjs",
+      "action": "restore",
+      "afterSha256": "186775ca10bec344b11e38dca72b7c985afb0d564e8a42764c87b1a9d22bc632",
+      "backup": "backup/universe/tests/rotation.mjs",
+      "beforeSha256": "85492a922c7b943501ba61c2b8c46864de4dea9fecb987fb528523425f2e7e41"
+    },
+    {
+      "root": "universe",
+      "relative": "vite.config.ts",
+      "action": "restore",
+      "afterSha256": "9bbee168e2ad1bbcaab7aa2751c2a7234f4621d65a531a64d0dceb2251e52b4b",
+      "backup": "backup/universe/vite.config.ts",
+      "beforeSha256": "7f90a96de2f60df75f620857b131e4042a24f9bda25e98151f4c2440a8be301a"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/albumSurface.ts",
+      "action": "remove",
+      "afterSha256": "ff4d38d69eba56c0a382bbb63bf7c5fc6f1b68ecd01e3d1d9dcd38572f9c50b1"
+    },
+    {
+      "root": "universe",
+      "relative": "src/hooks/useImmersivePlayer.ts",
+      "action": "remove",
+      "afterSha256": "ce43e159abaa3214891961e4b65ddbfeccfa08f9e8304fd11194f6cc3c7bde4a"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/json.ts",
+      "action": "remove",
+      "afterSha256": "88ec7b9649b24217902de25c5a2650c6926d7da84a695531d18aca89bd9dba69"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/deployment.ts",
+      "action": "remove",
+      "afterSha256": "e452b1aa9c2f105769a5068846144b28adf1d20d5a6c37574975f3b24f962820"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/musicWorldTransport.ts",
+      "action": "remove",
+      "afterSha256": "f3f30ff46166a2c55743b5629e3c881d166feedf9cdf0cdb8ac1f3998e831cf1"
+    },
+    {
+      "root": "universe",
+      "relative": "src/hooks/useHallEmbedding.ts",
+      "action": "remove",
+      "afterSha256": "0c8e2ce31e40c23151b1cfc418a7bb8031b92a91938e992d2427bd3c007910da"
+    },
+    {
+      "root": "universe",
+      "relative": "src/lib/oauthWindow.ts",
+      "action": "remove",
+      "afterSha256": "8075a3d8178fe6ec6f97c6044e083bbf69e845f963e924d323f281e573df13f4"
+    },
+    {
+      "root": "universe",
+      "relative": "tests/json.test.ts",
+      "action": "remove",
+      "afterSha256": "e0169881121bd246685d7c93d1a0aee9d9e30ff12ecd3db06d611b22347803c4"
+    },
+    {
+      "root": "universe",
+      "relative": "tests/universe-polish.mjs",
+      "action": "remove",
+      "afterSha256": "a464a24ed875a772f8472c34d9c9448e025d6733ee6727407a26f55db6c92b68"
+    }
+  ],
+  "sourceOnly": true
+}

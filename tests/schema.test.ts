@@ -16,7 +16,9 @@ describe("prepared SQLite schema", () => {
     const db = createDatabase();
     try {
       const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all();
-      expect(tables).toHaveLength(16);
+      expect(tables).toHaveLength(18);
+      expect(tables).toContainEqual({ name: "qq_accounts" });
+      expect(tables).toContainEqual({ name: "platform_accounts" });
       expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     } finally { db.close(); }
   });

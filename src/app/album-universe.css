@@ -1,0 +1,17 @@
+.mw-universe-room { position: fixed; inset: 0; z-index: 90; overflow: hidden; background: #060d18; }
+.mw-universe-room iframe { display: block; border: 0; width: 100%; height: 100%; }
+.mw-universe-loading { position: absolute; inset: 0; display: grid; place-content: center; background: radial-gradient(ellipse at 50% 45%, #152239, #060d18 65%); transition: opacity .65s ease, visibility 0s .65s; }
+.mw-universe-room.is-ready .mw-universe-loading { opacity: 0; visibility: hidden; pointer-events: none; }
+.mw-universe-loading-orbit { position: absolute; left: 50%; top: 50%; width: 116px; height: 116px; transform: translate(-50%, -50%); perspective: 300px; }
+.mw-universe-loading-orbit i { position: absolute; inset: 0; border: 1px solid #d9bb7740; border-top-color: #f7deb0; border-radius: 50%; animation: mw-universe-orbit 4s linear infinite; box-shadow: 0 0 12px #d9bb7710; }
+.mw-universe-loading-orbit i:nth-child(2) { inset: 13px; animation-duration: 3s; animation-direction: reverse; opacity: .7; }
+.mw-universe-loading-orbit i:nth-child(3) { inset: 26px; animation-duration: 5s; opacity: .45; }
+.mw-universe-loading-orbit b { position: absolute; inset: 49px; background: #f4d39a; border-radius: 50%; box-shadow: 0 0 30px #e2b97680, 0 0 70px #d9ad5930; animation: mw-universe-core 2s ease-in-out infinite alternate; }
+.mw-universe-transition .mw-fog-veil { background: radial-gradient(ellipse at var(--fog-x) var(--fog-y), #3d3740, #121d31 45%, #060d18 80%); }
+.mw-universe-transition .mw-fog-clouds { opacity: .2; }
+.mw-universe-transition .mw-fog-bloom { background: radial-gradient(circle, #ffe3af66, #c8a17526 45%, transparent 72%); }
+.mw-universe-recovery { position: absolute; top: calc(50% + 92px); left: 50%; transform: translateX(-50%); display: flex; gap: 18px; }
+.mw-universe-recovery button { width: 44px; height: 44px; border: 1px solid #d9bb7740; background: #172239; color: #eed8b1; border-radius: 50%; font-size: 23px; cursor: pointer; }
+@keyframes mw-universe-orbit { from { transform: rotateX(55deg) rotateZ(0); } to { transform: rotateX(55deg) rotateZ(360deg); } }
+@keyframes mw-universe-core { from { opacity: .5; transform: scale(.85); } to { opacity: .95; transform: scale(1.08); } }
+@media (prefers-reduced-motion: reduce) { .mw-universe-loading-orbit i, .mw-universe-loading-orbit b { animation: none; } .mw-universe-loading { transition-duration: .01ms; } }

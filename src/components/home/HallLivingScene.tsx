@@ -196,7 +196,7 @@ export function HallLivingScene({ active }: { active: boolean }) {
     <div className="mw-living-still" style={active ? { backgroundImage: "url(" + HALL_HIGH_RES_IMAGE + ")" } : undefined} />
     <canvas ref={canvas} className="mw-living-canvas" width={1} height={1} />
     <div className="mw-hall-breathing">
-      {[...hallModules, ...smallLights].map((point, index) => <i key={index} className="mw-breathing-light"
+      {[...hallModules.filter((module) => module.id === "world"), ...smallLights].map((point, index) => <i key={index} className="mw-breathing-light"
         style={{ left: point.x + "%", top: point.y + "%", width: point.size + "%", "--breath-delay": index * -.37 + "s" } as CSSProperties} />)}
       <i className="mw-floor-breath" />
       <i className="mw-robot-lamp" />

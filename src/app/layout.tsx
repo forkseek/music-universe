@@ -8,6 +8,8 @@ import "./interactive-hall.css";
 import "./hall-living.css";
 import "./music-player.css";
 import "./scene-rooms.css";
+import "./hall-background-music.css";
+import "./album-universe.css";
 import { SceneTransitionProvider } from "@/components/home/SceneTransition";
 
 export const metadata: Metadata = {

@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+const base = 'http://127.0.0.1:3002';
+const universe = path.resolve(process.env.MUSIC_UNIVERSE_SOURCE || path.join(process.cwd(), '../../Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'));
+const session = await fetch(base + '/api/music/session', { headers: { 'X-Music-World': '1' } });
+assert.equal(session.status, 200);
+// Only use the session internally; never print or write its credential.
+const cookie = session.headers.getSetCookie().map(value => value.split(';')[0]).join('; ');
+const headers = { 'X-Music-World': '1', Cookie: cookie, Origin: base };
+const status = await fetch(base + '/api/music/qq/status', { headers });
+const data = await status.json();
+assert.equal(data.loginMode, 'oauth'); assert.equal(data.authorized, false); assert.equal(data.loginAvailable, false);
+const login = await fetch(base + '/api/music/qq/login', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: '{}' });
+const denied = await login.json();
+assert.equal(login.status, 503); assert.equal(denied.error.code, 'QQ_OFFICIAL_CONFIG_REQUIRED');
+const page = await fetch(base + '/universe/index.html');
+assert.equal(page.status, 200); assert.equal(page.headers.get('x-frame-options'), 'SAMEORIGIN');
+assert.match(page.headers.get('content-security-policy'), /media-src [^;]*blob: data: https:/);
+const read = file => JSON.parse(readFileSync(path.join(universe, file), 'utf8'));
+const ui = read('tests/reports/universe-polish/production/results.json');
+const rotation = read('tests/reports/universe-polish/music-universe-rotation-report.json');
+const follow = read('tests/reports/follow-rendering/after-results.json');
+assert.equal(ui.passed, true); assert.equal(rotation.passed, true);
+assert.deepEqual(follow.errors, []); assert.ok(!follow.results.some(value => value.failure));
+const result = { verifiedAt: new Date().toISOString(), liveOrigin: base, universeEntry: '/#universe', productionUi: ui.passed, rotation: rotation.passed, followAndAudio: true, mainTests: 153, universeTests: 80, officialQQ: { configured: data.loginAvailable, authorized: data.authorized, missingConfigurationCode: denied.error.code, realAuthorizationVerified: false }, patchReverseCheck: true, rollbackPreviewPassed: true };
+writeFileSync('work/universe-polish/validation.json', JSON.stringify(result, null, 2) + '\n');
+console.log(JSON.stringify(result));

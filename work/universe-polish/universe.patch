@@ -1,0 +1,1061 @@
+diff --git a/package.json b/package.json
+index f6c543c..d3fb256 100644
+--- a/package.json
++++ b/package.json
+@@ -9,6 +9,7 @@
+   "scripts": {
+     "dev": "vite --host 127.0.0.1 --port 5188 --strictPort",
+     "build": "tsc -b && vite build",
++    "build:hall": "tsc -b && vite build --mode hall",
+     "preview": "vite preview --host 127.0.0.1 --port 4188 --strictPort",
+     "test": "tsx --test tests/*.test.ts",
+     "test:e2e": "node tests/browser.mjs",
+diff --git a/src/App.tsx b/src/App.tsx
+index 973607b..c00ef9b 100644
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -11,7 +11,9 @@ import { useGalaxyNavigation } from './hooks/useGalaxyNavigation'
+ import { useCompanionDock } from './hooks/useCompanionDock'
+ import { useFloatingPanel } from './hooks/useFloatingPanel'
+ import { useBrowseWave } from './hooks/useBrowseWave'
+-import { MUSIC_HALL_URL } from './lib/musicWorld'
++import { useImmersivePlayer } from './hooks/useImmersivePlayer'
++import { useHallEmbedding } from './hooks/useHallEmbedding'
++import { MUSIC_HALL_URL, navigateToMusicWorld } from './lib/musicWorld'
+ import { readExploration, rememberExploration } from './lib/explorationSession'
+ import { rememberPlay } from './lib/playHistory'
+ import { enrichAlbumRatings } from './lib/ratingEnrichment'
+@@ -67,10 +69,13 @@ export default function App() {
+   const [quality, setQuality] = useState<RenderQuality>('auto')
+   // 默认规则：进入界面即退出沉浸模式（显示完整工具界面）。
+   const [hudVisible, setHudVisible] = useState(true)
+-  const [playerRevealed, setPlayerRevealed] = useState(false)
+   const [notice, setNotice] = useState('')
+   const [seedError, setSeedError] = useState('')
+   const shell = useRef<HTMLDivElement>(null)
++  const playerDock = useRef<HTMLDivElement>(null)
++  const immersivePlayer = useImmersivePlayer(!hudVisible, searchOpen || queueOpen || !!room || showGuide || editing, playerDock)
++  const playerRevealed = immersivePlayer.revealed
++  useHallEmbedding()
+   const audio = useAudioPlayback()
+   const albumMusic = useAlbumMusic(album, audio)
+   const sceneHost = useRef<HTMLElement>(null)
+@@ -133,16 +138,6 @@ export default function App() {
+     // Closing tools returns keyboard input to the scene rather than its now-inert button.
+     if (!hudVisible) sceneHost.current?.querySelector('canvas')?.focus({ preventScroll: true })
+   }, [hudVisible])
+-  // 沉浸模式下，光标滑到屏幕最下方唤出播放菜单；离开底部边缘后收回。
+-  useEffect(() => {
+-    if (hudVisible) { setPlayerRevealed(false); return }
+-    const EDGE = 140
+-    const track = (event: PointerEvent) => setPlayerRevealed(event.clientY >= window.innerHeight - EDGE)
+-    const hide = () => setPlayerRevealed(false)
+-    window.addEventListener('pointermove', track, { passive: true })
+-    document.addEventListener('pointerleave', hide)
+-    return () => { window.removeEventListener('pointermove', track); document.removeEventListener('pointerleave', hide) }
+-  }, [hudVisible])
+   const selected = galaxy.planets.find((planet) => planet.id === selectedId)
+   // 点击星球时读取该星球的歌曲数据：时长推导尺寸 / 直径 / 公转 / 自转，评分推导重量。
+   const selectedMetrics = useMemo(() => selected ? derivePlanetMetrics(selected, galaxy.numericSeed) : null, [selected, galaxy.numericSeed])
+@@ -255,8 +250,9 @@ export default function App() {
+       if (event.code === 'Escape') {
+         if (navigation.cameraModeRef.current === 'free') { event.preventDefault(); navigation.cameraActions.current?.recenter(); return }
+         if (room || tracksOpen || hallOpen || qualityOpen || queueOpen) { setRoom(null); setTracksOpen(false); setHallOpen(false); setQualityOpen(false); setQueueOpen(false) }
++        else if (playerRevealed) immersivePlayer.close()
+         else if (hudVisible) setHudVisible(false)
+-        else window.location.assign(MUSIC_HALL_URL)
++        else navigateToMusicWorld('hall')
+         return
+       }
+       if (event.code === 'KeyL' && audio.track) { event.preventDefault(); toggleFollow(); return }
+@@ -275,7 +271,7 @@ export default function App() {
+     <audio ref={audio.audioRef} preload="none" data-testid="audio-engine" />
+     <main ref={sceneHost} onPointerDownCapture={(event) => { if (event.target instanceof HTMLCanvasElement) event.target.focus({ preventScroll: true }) }} id="universe" className="galaxy-viewport" data-testid="galaxy-viewport" aria-label="全屏专辑 3D 星系">
+       <div ref={navigation.backdrop} className="space-motion-backdrop" aria-hidden="true" /><div className="scene-vignette" />
+-      <Suspense fallback={<div className="scene-loading" role="status"><span className="loading-orbit" />正在点亮你的宇宙…</div>}>
++      <Suspense fallback={<div className="scene-loading" role="status" aria-label="正在加载专辑宇宙"><span className="loading-orbit" aria-hidden="true" /></div>}>
+         <GalaxyScene galaxy={galaxy} album={album} selectedId={selectedId} onSelect={focusPlanet} playing={playing} showLabels={hudVisible ? showLabels : immersiveLabels} showOrbits={showOrbits} resetKey={resetKey} generation={generation} quality={album.tracks.length > 40 && quality === 'auto' ? 'low' : quality} navigation={navigation} onToggleTarget={toggleTarget} onPlayTarget={playPlanet} onInspectPlanet={focusPlanet} pulseTarget={pulseTarget} toolsVisible={hudVisible} selectedMetrics={selectedMetrics} />
+       </Suspense>
+       {selected && <section className={`planet-detail${planetPanel.dragging ? ' is-dragging' : ''}`} role="status" ref={planetPanel.panelRef} style={planetPanel.style} onPointerDown={planetPanel.onPointerDown} onPointerMove={planetPanel.onPointerMove} onPointerUp={planetPanel.onPointerUp} onPointerCancel={planetPanel.onPointerCancel} title="按住可拖动"><button className="icon-button detail-close" aria-label="关闭星球详情" onClick={() => selectTrack(null)}><X size={16} /></button><div className="detail-top"><span className="detail-number">{String(selected.index + 1).padStart(2, '0')}</span><span className="detail-planet" style={{ '--planet-color': selected.color, '--planet-secondary': selected.secondaryColor } as CSSProperties} /></div><span className="detail-eyebrow">TRACK PLANET / {STYLE_LABELS[selected.style]}</span><strong>{selected.title}</strong><p>{formatDuration(selected.duration)} <span>·</span> {selected.moonCount} 颗卫星 {selected.hasRing && ' · 星环'}</p>{selectedMetrics && <dl className="detail-metrics" data-testid="planet-metrics"><div><dt>半径</dt><dd>{Math.round(selectedMetrics.diameter / 2).toLocaleString('en-US')} km</dd></div><div><dt>直径</dt><dd>{Math.round(selectedMetrics.diameter).toLocaleString('en-US')} km</dd></div><div><dt>公转周期</dt><dd>{formatDuration(Math.round(selectedMetrics.orbitalPeriod))}</dd></div><div><dt>自转周期</dt><dd>{formatDuration(Math.round(selectedMetrics.rotationPeriod))}</dd></div><div><dt>重量</dt><dd>{selectedMetrics.mass.toFixed(2)} M⊕</dd></div><div><dt>评分</dt><dd>{selectedMetrics.rating} / 100{selected.ratingSource === 'netease' && <small className="rating-source" title="来自网易云音乐全站播放热度，非专业乐评">网易云热度</small>}</dd></div></dl>}<div className="detail-navigation"><button disabled={selected.index === 0} aria-label="上一颗歌曲星球" onClick={() => { const previous = galaxy.planets[selected.index - 1]; if (previous) focusPlanet(previous.id) }}><ChevronLeft size={13} />上一首</button><button disabled={selected.index === galaxy.planets.length - 1} aria-label="下一颗歌曲星球" onClick={() => { const next = galaxy.planets[selected.index + 1]; if (next) focusPlanet(next.id) }}>下一首<ChevronRight size={13} /></button></div></section>}
+@@ -301,13 +297,14 @@ export default function App() {
+     <PlayQueue open={queueOpen} planets={galaxy.planets} currentId={activePlanet.id} playing={audio.playing} onPlay={playFromQueue} onClose={() => setQueueOpen(false)} />
+     <CompanionRooms room={room} album={album} planets={galaxy.planets} currentId={activePlanet.id} audio={audio} onPlay={playFromQueue} onSkip={skipTrack} onToggle={toggleMusic} onClose={() => setRoom(null)} />
+     {albumSync.message && <p className="album-sync-status" data-testid="album-sync-status" data-state={albumSync.status} role="status"><span>{albumSync.message}</span>{albumSync.status === 'error' && <button type="button" onClick={albumSync.retry}>重新获取</button>}</p>}
+-    <div className="player-dock" inert={!hudVisible && !playerRevealed} aria-hidden={!hudVisible && !playerRevealed}>
++    {!hudVisible && <button type="button" className={`immersive-player-handle${playerRevealed ? ' is-open' : ''}`} aria-label={playerRevealed ? '收起播放器' : '展开播放器'} aria-controls="immersive-player" aria-expanded={playerRevealed} {...immersivePlayer.handle}><span aria-hidden="true" /></button>}
++    <div ref={playerDock} id="immersive-player" className="player-dock" inert={!hudVisible && !playerRevealed} aria-hidden={!hudVisible && !playerRevealed}>
+       <PlayerBar title={activePlanet.title} album={album.name} index={activePlanet.index} duration={activePlanet.duration ?? 0} playing={playing}
+         live={{ track: audio.track, currentTime: audio.currentTime, duration: audio.duration, playing: audio.playing, seek: audio.seek }}
+         loading={albumMusic.loading || audio.status === 'loading'} message={audio.message || albumMusic.message} error={albumMusic.error || !!audio.message}
+         onOpenMusic={() => { albumMusic.cancel(); setSearchOpen(true) }}
+         onOpenQueue={() => { setHallOpen(false); setQueueOpen((value) => !value) }}
+-        onToggle={toggleMusic} onSkip={skipTrack} />
++        onToggle={toggleMusic} onSkip={skipTrack} onClose={!hudVisible ? immersivePlayer.close : undefined} />
+     </div>
+     {audio.track && <button type="button" className={`planet-follow-control ${navigation.followingTarget ? 'is-following' : ''}`} data-testid="planet-follow-control"
+       aria-label={navigation.followingTarget || (navigation.followEnabled && albumSync.status === 'loading') ? '解除跟随' : '跟随当前歌曲'}
+diff --git a/src/components/GalaxyScene.tsx b/src/components/GalaxyScene.tsx
+index 451b69d..3590f59 100644
+--- a/src/components/GalaxyScene.tsx
++++ b/src/components/GalaxyScene.tsx
+@@ -14,6 +14,7 @@ import ImmersiveBackground from './ImmersiveBackground'
+ import type { RenderQuality } from '../lib/sceneFraming'
+ import { MUSIC_HALL_URL } from '../lib/musicWorld'
+ import { useAlbumTexture } from '../hooks/useAlbumTexture'
++import { notifyUniverseReady } from '../hooks/useHallEmbedding'
+ import { orbitPosition, TAU, writeOrbitPosition } from '../lib/orbitalMotion'
+ import type { Album, AlbumGalaxy, GalaxyOrbit, GalaxyPlanet } from '../lib/generateAlbumGalaxy'
+ import type { PlanetMetrics } from '../lib/planetMetrics'
+@@ -380,9 +381,14 @@ export default function GalaxyScene(props: SceneProps) {
+   const moving = props.playing && visible
+   const [readyGeneration, setReadyGeneration] = useState(-1)
+   const markReady = useCallback(() => setReadyGeneration(props.generation), [props.generation])
++  useEffect(() => {
++    if (readyGeneration !== props.generation) return
++    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(notifyUniverseReady) })
++    return () => cancelAnimationFrame(frame)
++  }, [readyGeneration, props.generation])
+   const labels = useRef(new Map<string, HTMLDivElement>())
+   return <SceneBoundary album={props.album} generation={props.generation}>
+-    {readyGeneration !== props.generation && <div className="scene-loading" role="status"><span className="loading-orbit" /> 正在点亮你的宇宙…</div>}
++    {readyGeneration !== props.generation && <div className="scene-loading" role="status" aria-label="正在加载专辑宇宙"><span className="loading-orbit" aria-hidden="true" /></div>}
+     <Canvas key="space-camera-v5" frameloop={moving ? 'always' : 'demand'} camera={camera}
+       dpr={renderDpr} gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+       onCreated={({ gl }) => { gl.domElement.tabIndex = 0; gl.domElement.setAttribute('aria-label', '音乐星系，滚轮缩放，拖动空白环绕镜头，拖动恒星旋转封面，R 自由镜头，K 回正') }}
+diff --git a/src/components/MusicSearch.tsx b/src/components/MusicSearch.tsx
+index 0682e8e..600c140 100644
+--- a/src/components/MusicSearch.tsx
++++ b/src/components/MusicSearch.tsx
+@@ -6,6 +6,7 @@ import { musicWorldMedia } from '../lib/musicWorldClient'
+ import { cancelMusicLogin, connectMusic, disconnectMusic, musicPlatforms, pollMusicLogin, readConnection, resolveMusic, searchMusic } from '../lib/musicPlatforms'
+ import type { Connection, Login, MusicPlatform, PlatformSong } from '../lib/musicPlatforms'
+ import type { AudioPlayback } from '../hooks/useAudioPlayback'
++import { officialQqAuthorizeUrl, openAuthWindow } from '../lib/oauthWindow'
+ import '../music-platforms.css'
+ 
+ const waiting = (login: Login | null) => !!login && ['pending', 'scanned', 'authorizing'].includes(login.status)
+@@ -36,6 +37,7 @@ export default function MusicSearch({ audio, onClose }: { audio: AudioPlayback;
+   const playRequest = useRef<AbortController | null>(null)
+   const statusRequest = useRef<AbortController | null>(null)
+   const loginGeneration = useRef(0)
++  const authWindow = useRef<Window | null>(null)
+   const label = musicPlatforms[provider]
+   useEffect(() => { closeRef.current = onClose }, [onClose])
+ 
+@@ -57,12 +59,14 @@ export default function MusicSearch({ audio, onClose }: { audio: AudioPlayback;
+       searchRequest.current?.abort(); playRequest.current?.abort(); statusRequest.current?.abort()
+       const active = loginRef.current
+       if (active && waiting(active)) void cancelMusicLogin(active.provider, active.loginId).catch(() => {})
++      authWindow.current?.close()
+       window.removeEventListener('keydown', keydown, true)
+     }
+   }, [])
+ 
+   const updateLogin = (value: Login | null) => { loginRef.current = value; setLogin(value) }
+   const cancel = () => {
++    authWindow.current?.close(); authWindow.current = null
+     loginGeneration.current++
+     const active = loginRef.current
+     updateLogin(null); setConnecting(false)
+@@ -76,13 +80,18 @@ export default function MusicSearch({ audio, onClose }: { audio: AudioPlayback;
+     try { localStorage.setItem('music-universe:platform', next) } catch { /* Selection persistence is optional. */ }
+   }
+   const startLogin = async () => {
++    authWindow.current?.close()
++    // Open synchronously in the user's gesture; an awaited request loses popup permission.
++    const popup = connection?.loginMode === 'oauth' ? openAuthWindow() : null
++    authWindow.current = popup
+     const generation = ++loginGeneration.current
+     setConnecting(true); setAccountError(''); updateLogin(null)
+     try {
+       const result = await connectMusic(provider)
+-      if (!alive.current || selected.current !== provider || loginGeneration.current !== generation) { await cancelMusicLogin(provider, result.loginId); return }
++      if (!alive.current || selected.current !== provider || loginGeneration.current !== generation) { popup?.close(); await cancelMusicLogin(provider, result.loginId); return }
++      if (result.authorizeUrl) { result.authorizeUrl = officialQqAuthorizeUrl(result.authorizeUrl); if (popup) popup.location.replace(result.authorizeUrl) }
+       updateLogin(result)
+-    } catch (error) { if (alive.current && loginGeneration.current === generation) setAccountError(messageOf(error)) }
++    } catch (error) { popup?.close(); if (alive.current && loginGeneration.current === generation) setAccountError(messageOf(error)) }
+     finally { if (alive.current && loginGeneration.current === generation) setConnecting(false) }
+   }
+ 
+@@ -101,7 +110,11 @@ export default function MusicSearch({ audio, onClose }: { audio: AudioPlayback;
+       } catch (error) {
+         if (controller.signal.aborted) return
+         setAccountError(messageOf(error))
+-        if ((loginRef.current?.expiresAt ?? 0) <= Date.now()) return
++        if ((loginRef.current?.expiresAt ?? 0) <= Date.now()) {
++          const current = loginRef.current
++          if (current) updateLogin({ ...current, status: 'expired', message: '本次登录已过期，请重新连接。' })
++          return
++        }
+       }
+       timer = setTimeout(poll, 2500)
+     }
+@@ -176,7 +189,7 @@ export default function MusicSearch({ audio, onClose }: { audio: AudioPlayback;
+         {(Object.keys(musicPlatforms) as MusicPlatform[]).map(p => <button key={p} type="button" aria-pressed={provider === p} data-platform={p} onClick={() => switchPlatform(p)}>{musicPlatforms[p]}</button>)}
+       </div>
+       <div className="music-platform-account" data-testid="music-platform-account">
+-        <span className="music-platform-avatar">{connection?.user?.avatar ? <img src={connection.user.avatar} alt="账号头像" referrerPolicy="no-referrer" /> : <UserRound size={18} />}</span>
++        <span className="music-platform-avatar">{connection?.user?.avatar ? <img src={musicWorldMedia(connection.user.avatar)} alt="账号头像" referrerPolicy="no-referrer" /> : <UserRound size={18} />}</span>
+         <div className="music-search-copy"><strong>{connection?.authorized ? connection.user?.nickname || label : label}</strong><span role="status" data-testid="music-search-status">{connection?.message || (accountError ? '暂时无法连接' : '正在连接…')}</span></div>
+         <button type="button" className="icon-button" aria-label="刷新账号状态" onClick={() => void refreshStatus()}><RefreshCw size={14} /></button>
+         {connection?.authorized
+@@ -185,6 +198,7 @@ export default function MusicSearch({ audio, onClose }: { audio: AudioPlayback;
+       </div>
+       {login && <div className="music-platform-login" data-testid="music-platform-login-state">
+         {login.image && waiting(login) && <img className="music-platform-qr" src={login.image} alt={`${label}登录二维码`} />}
++        {login.authorizeUrl && waiting(login) && <a className="music-search-button" href={login.authorizeUrl} target="_blank" rel="noopener noreferrer">打开 QQ 官方扫码授权页 <ArrowUpRight size={13} /></a>}
+         <p role="status">{waiting(login) ? <Loader2 size={14} className="bridge-spin" /> : login.status === 'success' ? <Check size={14} /> : null}{login.message}</p>
+         {waiting(login) ? <button className="music-search-button" onClick={cancel}>取消登录</button> : login.status !== 'success' && <button className="music-search-button" onClick={() => void startLogin()} disabled={connecting}>重新连接</button>}
+       </div>}
+diff --git a/src/components/PlayerBar.tsx b/src/components/PlayerBar.tsx
+index 67efca1..a7df5d7 100644
+--- a/src/components/PlayerBar.tsx
++++ b/src/components/PlayerBar.tsx
+@@ -1,5 +1,5 @@
+ import { useState } from 'react'
+-import { Heart, ListMusic, Loader2, Pause, Play, Repeat, Shuffle, SkipBack, SkipForward } from 'lucide-react'
++import { Heart, ListMusic, Loader2, Pause, Play, Repeat, Shuffle, SkipBack, SkipForward, X } from 'lucide-react'
+ import { formatDuration } from '../data/albums'
+ import { PlayerShip } from './PlayerShip'
+ import type { LivePlayback } from '../hooks/useAudioPlayback'
+@@ -27,7 +27,7 @@ function arcY(t: number) {
+ 
+ const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
+ 
+-export function PlayerBar({ title, album, duration, playing, onToggle, onSkip, live, loading = false, message = '', error = false, onOpenMusic, onOpenQueue }: {
++export function PlayerBar({ title, album, duration, playing, onToggle, onSkip, live, loading = false, message = '', error = false, onOpenMusic, onOpenQueue, onClose }: {
+   title: string
+   album: string
+   index: number
+@@ -41,6 +41,7 @@ export function PlayerBar({ title, album, duration, playing, onToggle, onSkip, l
+   error?: boolean
+   onOpenMusic?: () => void
+   onOpenQueue?: () => void
++  onClose?: () => void
+ }) {
+   const [shuffle, setShuffle] = useState(false)
+   const [repeat, setRepeat] = useState(false)
+@@ -64,6 +65,7 @@ export function PlayerBar({ title, album, duration, playing, onToggle, onSkip, l
+     { offset: 1, color: '#e8b478', opacity: .16 },
+   ]
+   return <footer className={`player-shell${error ? ' player-has-error' : ''}`} aria-label="播放器">
++    {onClose && <button type="button" className="immersive-player-close" aria-label="关闭底部播放器" onClick={onClose}><X size={15} /></button>}
+     <span className="visually-hidden" data-testid="player-title">{shownTitle} · {shownAlbum}</span>
+     <div className="player-orbit">
+       <svg viewBox={`0 0 ${ARC_WIDTH} ${ARC_HEIGHT}`} preserveAspectRatio="none" aria-hidden="true">
+diff --git a/src/data/albums.ts b/src/data/albums.ts
+index bc84d47..e8f393c 100644
+--- a/src/data/albums.ts
++++ b/src/data/albums.ts
+@@ -1,11 +1,12 @@
+ import type { Album } from '../lib/generateAlbumGalaxy'
++import { universeAsset } from '../lib/deployment'
+ 
+ // Metadata / cover: Apple Music and the public iTunes lookup API, checked 2026-10-04.
+ export const DEFAULT_ALBUM: Album = {
+   id: 'dont-tap-the-glass',
+   name: "DON'T TAP THE GLASS",
+   artist: 'Tyler, The Creator',
+-  cover: '/covers/dont-tap-the-glass.jpg',
++  cover: universeAsset('covers/dont-tap-the-glass.jpg'),
+   year: 2025,
+   tracks: [
+     { id: 'dtg-01', title: 'Big Poe', duration: 182 },
+diff --git a/src/glass-ui.css b/src/glass-ui.css
+index 97dd76a..af3303d 100644
+--- a/src/glass-ui.css
++++ b/src/glass-ui.css
+@@ -203,7 +203,7 @@
+ 
+ /* -------------------------------------------------------------------------
+    PLAYER-DOCK：沉浸模式下，播放菜单默认收在屏幕底部之外，光标滑到界面最下方
+-   时以带回弹（果冻）的缓动滑出。
++   时停留后展开，以平滑无回弹的缓动滑出。
+    -------------------------------------------------------------------------
+    播放菜单已移出 .universe-hud —— 该层在沉浸模式下整体 opacity:0，父级透明度
+    无法被子级覆盖，故改为挂在 .player-dock 下独立控制显隐。
+@@ -215,16 +215,24 @@
+   pointer-events: none;
+   transform: translateX(-50%) translateY(calc(100% + 34px)) scaleY(.97);
+   transform-origin: 50% 100%;
+-  transition: transform .68s cubic-bezier(.2, 1.62, .34, 1), opacity .3s ease, visibility 0s linear .34s;
++  transition: transform .46s cubic-bezier(.22, .8, .25, 1), opacity .25s ease, visibility 0s linear .46s;
+ }
+ .hud-hidden.player-revealed .player-shell {
+   visibility: visible;
+   opacity: 1;
+   pointer-events: auto;
+   transform: translateX(-50%) translateY(0) scaleY(1);
+-  transition: transform .68s cubic-bezier(.2, 1.62, .34, 1), opacity .26s ease, visibility 0s;
++  transition: transform .46s cubic-bezier(.22, .8, .25, 1), opacity .25s ease, visibility 0s;
+ }
+ 
++.immersive-player-handle { position: absolute; z-index: 13; left: 50%; bottom: max(3px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: 88px; height: 26px; display: grid; place-items: center; border: 0; padding: 0; background: transparent; color: #ddbb87; cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent; }
++.immersive-player-handle span { width: 38px; height: 3px; border-radius: 10px; background: currentColor; opacity: .48; box-shadow: 0 0 14px #dfb57940; transition: width .25s, opacity .25s; }
++.immersive-player-handle:hover span, .immersive-player-handle:focus-visible span { width: 50px; opacity: .95; }
++.immersive-player-handle.is-open { bottom: max(0px, env(safe-area-inset-bottom)); }
++.immersive-player-handle.is-open span { opacity: .28; }
++.immersive-player-close { position: absolute; z-index: 3; right: 0; top: 0; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #ddbb8720; border-radius: 50%; background: #101927a8; color: #ddbb87; cursor: pointer; }
++.immersive-player-close:hover { border-color: #ddbb8780; background: #182538; }
++
+ /* -------------------------------------------------------------------------
+    CONTROL-CONSOLE：底部互动栏 → 可拖动 / 可缩放的悬浮小窗
+    -------------------------------------------------------------------------
+diff --git a/src/lib/explorationSession.ts b/src/lib/explorationSession.ts
+index 1a6e09c..61ca288 100644
+--- a/src/lib/explorationSession.ts
++++ b/src/lib/explorationSession.ts
+@@ -1,30 +1,28 @@
+ import { DEFAULT_ALBUM } from '../data/albums'
+-import type { Album, Track } from './generateAlbumGalaxy'
++import type { Album } from './generateAlbumGalaxy'
++import { createJsonStore, jsonRecord } from './json'
+ 
+ const SESSION_KEY = 'music-universe:exploration:v1'
+ export const DEFAULT_SEED = 'GLASS-2025'
+ interface Exploration { album: Album; seed: string }
+ 
+-export function readExploration(): Exploration {
+-  const fallback = { album: DEFAULT_ALBUM, seed: DEFAULT_SEED }
+-  try {
+-    const value = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null')
+-    if (!value || typeof value.seed !== 'string' || !value.seed.trim() || value.seed.length > 80) return fallback
+-    const album = value.album
+-    if (!album || !['id', 'name', 'artist', 'cover'].every((key) => typeof album[key] === 'string' && album[key].trim())) return fallback
+-    if (album.year !== undefined && (typeof album.year !== 'number' || !Number.isFinite(album.year))) return fallback
+-    if (!Array.isArray(album.tracks) || album.tracks.length < 1 || album.tracks.length > 300) return fallback
+-    if (!album.tracks.every((track: Track) => track && typeof track.id === 'string' && track.id.trim() && typeof track.title === 'string' && track.title.trim()
+-      && (track.duration === undefined || (typeof track.duration === 'number' && Number.isFinite(track.duration) && track.duration > 0)))) return fallback
+-    if (new Set(album.tracks.map((track: Track) => track.id)).size !== album.tracks.length) return fallback
+-    return { album, seed: value.seed }
+-  } catch { return fallback }
++function isExploration(input: unknown): input is Exploration {
++  const value = jsonRecord(input), album = jsonRecord(value.album)
++  if (typeof value.seed !== 'string' || !value.seed.trim() || value.seed.length > 80) return false
++  if (!['id', 'name', 'artist', 'cover'].every(key => typeof album[key] === 'string' && (album[key] as string).trim())) return false
++  if (album.year !== undefined && (typeof album.year !== 'number' || !Number.isFinite(album.year))) return false
++  if (!Array.isArray(album.tracks) || album.tracks.length < 1 || album.tracks.length > 300) return false
++  if (!album.tracks.every(input => {
++    const track = jsonRecord(input)
++    return typeof track.id === 'string' && !!track.id.trim() && typeof track.title === 'string' && !!track.title.trim()
++      && (track.duration === undefined || (typeof track.duration === 'number' && Number.isFinite(track.duration) && track.duration > 0))
++  })) return false
++  return new Set(album.tracks.map(track => track.id)).size === album.tracks.length
+ }
++const store = createJsonStore(() => sessionStorage, SESSION_KEY, isExploration)
++
++export const readExploration = () => store.read({ album: DEFAULT_ALBUM, seed: DEFAULT_SEED })
+ 
+ export function rememberExploration(value: Exploration) {
+-  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(value)) }
+-  catch {
+-    // Storage may be disabled or full after an upload. Editing remains available.
+-    try { sessionStorage.removeItem(SESSION_KEY) } catch { /* Storage unavailable. */ }
+-  }
++  store.write(value)
+ }
+diff --git a/src/lib/musicPlatforms.ts b/src/lib/musicPlatforms.ts
+index 02887e1..c7f6dd2 100644
+--- a/src/lib/musicPlatforms.ts
++++ b/src/lib/musicPlatforms.ts
+@@ -1,28 +1,35 @@
+ import type { AlbumResolution, PlayingIdentity } from './automaticAlbum'
++import { MusicRequestError, musicWorldRequest } from './musicWorldTransport'
+ 
+ export const musicPlatforms = { qq: 'QQ 音乐', netease: '网易云音乐', kugou: '酷狗音乐', qishui: '汽水音乐' } as const
+ export type MusicPlatform = keyof typeof musicPlatforms
+ export interface MusicUser { id: string; nickname: string; avatar: string }
+-export interface Connection { provider: MusicPlatform; authorized: boolean; user?: MusicUser; message: string; loginMode: 'qr' | 'window'; loginAvailable: boolean }
++export interface Connection { provider: MusicPlatform; authorized: boolean; user?: MusicUser; message: string; loginMode: 'qr' | 'window' | 'oauth'; loginAvailable: boolean; musicAuthorized?: boolean }
+ export interface PlatformSong { provider: MusicPlatform; id: string; playbackId: string; name: string; artist: string; album: string; albumId?: string; cover: string; duration: number; fee: number }
+ export interface SearchResult { provider: MusicPlatform; songs: PlatformSong[]; query: string; page: number; hasMore: boolean; source?: string }
+-export interface Login { provider: MusicPlatform; loginId: string; status: 'pending' | 'scanned' | 'authorizing' | 'success' | 'expired' | 'cancelled' | 'error'; message: string; expiresAt: number; image?: string; user?: MusicUser }
++export interface Login { provider: MusicPlatform; loginId: string; status: 'pending' | 'scanned' | 'authorizing' | 'success' | 'expired' | 'cancelled' | 'error'; message: string; expiresAt: number; image?: string; authorizeUrl?: string; user?: MusicUser }
+ export interface AudioSource { playable: boolean; url: string; quality?: string; trial?: boolean; message?: string }
+ let session: Promise<void> | undefined
+ 
+ async function request<T>(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
+-  const response = await fetch('/mw/api/music/' + path, { method, credentials: 'same-origin', cache: 'no-store', signal,
+-    headers: { 'X-Music-World': '1', ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}) },
+-    body: method === 'POST' ? JSON.stringify(body ?? {}) : undefined,
+-  })
+-  const result = await response.json().catch(() => null)
+-  if (!response.ok) { if (response.status === 404 && result?.error?.code === 'NOT_FOUND') session = undefined; throw new Error(result?.error?.message || '暂时无法连接音乐服务，请稍后重试。') }
+-  return result as T
++  return musicWorldRequest<T>('/api/music/' + path, { method, body, signal })
+ }
+ async function connected<T>(path: string, method: 'GET' | 'POST' = 'GET', body?: unknown, signal?: AbortSignal) {
+   session ??= request('session').then(() => undefined).catch(error => { session = undefined; throw error })
+   await session
+-  return request<T>(path, method, body, signal)
++  try { return await request<T>(path, method, body, signal) }
++  catch (error) {
++    // Restore an expired anonymous session once. Never blindly retry a login/play write.
++    if (error instanceof MusicRequestError && error.status === 404 && error.code === 'NOT_FOUND') {
++      session = undefined
++      if (method === 'GET' && path !== 'session' && !signal?.aborted) {
++        session ??= request('session').then(() => undefined).catch(cause => { session = undefined; throw cause })
++        await session
++        return request<T>(path, method, body, signal)
++      }
++    }
++    throw error
++  }
+ }
+ export const fetchPlayingAlbum = (identity: PlayingIdentity, signal?: AbortSignal) => connected<AlbumResolution>('album', 'POST', identity, signal)
+ export const readConnection = (p: MusicPlatform, signal?: AbortSignal) => connected<Connection>(`${p}/status`, 'GET', undefined, signal)
+diff --git a/src/lib/musicWorld.ts b/src/lib/musicWorld.ts
+index 041ae23..0b91faa 100644
+--- a/src/lib/musicWorld.ts
++++ b/src/lib/musicWorld.ts
+@@ -1,8 +1,8 @@
+-const configured = import.meta.env.VITE_MUSIC_WORLD_URL || 'http://127.0.0.1:3002/'
++const configured = import.meta.env?.VITE_MUSIC_WORLD_URL || (import.meta.env?.BASE_URL === '/universe/' ? '/' : 'http://127.0.0.1:3002/')
+ 
+ export function musicWorldHref(room: 'hall' | 'world' | 'library' | 'journey' = 'hall') {
+   try {
+-    const url = new URL(configured)
++    const url = new URL(configured, typeof window === 'undefined' ? 'http://127.0.0.1:3002/' : window.location.href)
+     if (!['http:', 'https:'].includes(url.protocol)) throw new Error('Unsupported URL')
+     url.hash = room
+     return url.href
+@@ -12,3 +12,8 @@ export function musicWorldHref(room: 'hall' | 'world' | 'library' | 'journey' =
+ }
+ 
+ export const MUSIC_HALL_URL = musicWorldHref()
++
++export function navigateToMusicWorld(room: 'hall' | 'world' | 'library' | 'journey') {
++  if (window.parent !== window) window.parent.postMessage({ type: 'music-universe:navigate', room }, window.location.origin)
++  else window.location.assign(musicWorldHref(room))
++}
+diff --git a/src/lib/musicWorldClient.ts b/src/lib/musicWorldClient.ts
+index a4bc29a..d8e816c 100644
+--- a/src/lib/musicWorldClient.ts
++++ b/src/lib/musicWorldClient.ts
+@@ -1,4 +1,6 @@
+ import type { Album, Track } from './generateAlbumGalaxy'
++import { MUSIC_API_BASE, universeAsset } from './deployment'
++import { musicWorldRequest } from './musicWorldTransport'
+ 
+ /**
+  * Music World (127.0.0.1:3002) serves no CORS headers, so the browser reaches it
+@@ -6,7 +8,7 @@ import type { Album, Track } from './generateAlbumGalaxy'
+  * cookie is host-scoped and 127.0.0.1 counts as one site for SameSite=Lax, so it
+  * survives the hop and every call lands in the same anonymous library.
+  */
+-const BASE = '/mw'
++const BASE = MUSIC_API_BASE
+ 
+ export interface MusicWorldTrack {
+   id: string
+@@ -77,18 +79,7 @@ export interface QqStatus {
+ }
+ 
+ async function request<T>(path: string, init?: { method?: 'GET' | 'POST'; body?: unknown; signal?: AbortSignal }): Promise<T> {
+-  const method = init?.method ?? 'GET'
+-  const response = await fetch(`${BASE}${path}`, {
+-    method,
+-    credentials: 'same-origin',
+-    cache: 'no-store',
+-    // Music World rejects reads and writes that do not announce themselves.
+-    headers: { 'X-Music-World': '1', ...(method === 'GET' ? {} : { 'Content-Type': 'application/json' }) },
+-    body: method === 'GET' ? undefined : JSON.stringify(init?.body ?? {}),
+-    signal: init?.signal,
+-  })
+-  if (!response.ok) throw new Error(`Music World ${path} 返回 ${response.status}`)
+-  return response.json() as Promise<T>
++  return musicWorldRequest<T>(path, init)
+ }
+ 
+ export const readLibrary = (scope: 'library' | 'demo' = 'library') => request<MusicWorldLibrary>(`/api/library?scope=${scope}`)
+@@ -140,7 +131,7 @@ export function albumFromLibrary(library: MusicWorldLibrary, name = 'MUSIC WORLD
+     id: `music-world-${library.scope || 'library'}`,
+     name,
+     artist: library.tracks[0]?.artists?.[0]?.name?.trim() || 'Music World',
+-    cover: '/covers/dont-tap-the-glass.jpg',
++    cover: universeAsset('covers/dont-tap-the-glass.jpg'),
+     tracks,
+   }
+ }
+diff --git a/src/lib/playHistory.ts b/src/lib/playHistory.ts
+index f05c91d..728e37a 100644
+--- a/src/lib/playHistory.ts
++++ b/src/lib/playHistory.ts
+@@ -6,6 +6,8 @@
+  * 同一首歌重复播放只更新时间并提到最前，因此「旅程」是一份去重的时间线。
+  */
+ 
++import { createJsonStore } from './json'
++
+ const KEY = 'music-universe:play-history:v1'
+ const LIMIT = 60
+ 
+@@ -37,19 +39,14 @@ function isEntry(value: unknown): value is PlayHistoryEntry {
+ 
+ function read(): PlayHistoryEntry[] {
+   if (cached) return cached
+-  try {
+-    const value = JSON.parse(localStorage.getItem(KEY) || 'null')
+-    cached = Array.isArray(value) ? value.filter(isEntry) : []
+-  } catch {
+-    // 隐私模式或存储被禁用时，历史只保留在内存里。
+-    cached = []
+-  }
++  cached = store.read([]).slice(0, LIMIT)
+   return cached
+ }
++const store = createJsonStore(() => localStorage, KEY, (value: unknown): value is PlayHistoryEntry[] => Array.isArray(value) && value.every(isEntry), 512 * 1024)
+ 
+ function commit(next: PlayHistoryEntry[]) {
+   cached = next
+-  try { localStorage.setItem(KEY, JSON.stringify(next)) } catch { /* 写不进去时保留内存副本。 */ }
++  store.write(next)
+   for (const listener of listeners) listener(next)
+ }
+ 
+diff --git a/src/lib/spaceMaterials.ts b/src/lib/spaceMaterials.ts
+index 765c9e3..69dd02a 100644
+--- a/src/lib/spaceMaterials.ts
++++ b/src/lib/spaceMaterials.ts
+@@ -1,6 +1,8 @@
+ import { AdditiveBlending, Color, ShaderMaterial, Texture, Vector3 } from 'three'
+ import { PLANET_STYLES } from './generateAlbumGalaxy'
+ import type { GalaxyPlanet } from './generateAlbumGalaxy'
++import { albumSurfaceConfig } from './albumSurface'
++import type { AlbumSurfaceConfig } from './albumSurface'
+ 
+ const sphereVertex = `
+   varying vec2 vUv;
+@@ -138,10 +140,15 @@ export function createAtmosphere(color: string, intensity = 0.7) {
+ 
+ // Artwork remains attached to the rotating sphere on both hemispheres.
+ // Rear X is reversed so the exterior artwork is upright rather than mirrored.
+-export function createAlbumSurface(cover: Texture) {
++export function createAlbumSurface(cover: Texture, options: Partial<AlbumSurfaceConfig> = {}) {
++  const config = albumSurfaceConfig(options)
+   return new ShaderMaterial({
+     vertexShader: sphereVertex,
+-    uniforms: { uCover: { value: cover }, uLight: { value: new Vector3(-0.4, 0.6, 1).normalize() }, uGlowColor: { value: new Color('#edbe72') }, uGlowIntensity: { value: 0.45 } },
++    uniforms: {
++      uCover: { value: cover }, uLight: { value: new Vector3(-0.4, 0.6, 1).normalize() },
++      uGlowColor: { value: new Color('#edbe72') }, uGlowIntensity: { value: 0.45 },
++      uSeamWidth: { value: config.seamWidth }, uEdgeInset: { value: config.edgeInset }, uEdgeBlur: { value: config.edgeBlur },
++    },
+     fragmentShader: `
+       varying vec3 vPosition;
+       varying vec3 vNormal;
+@@ -150,12 +157,28 @@ export function createAlbumSurface(cover: Texture) {
+       uniform vec3 uLight;
+       uniform vec3 uGlowColor;
+       uniform float uGlowIntensity;
++      uniform float uSeamWidth;
++      uniform float uEdgeInset;
++      uniform float uEdgeBlur;
++      vec3 edgePair(float y) {
++        // Both hemispheres share the same border color at z=0. No double image.
++        return (texture2D(uCover, vec2(uEdgeInset, clamp(y, 0.01, 0.99))).rgb
++              + texture2D(uCover, vec2(1.0-uEdgeInset, clamp(y, 0.01, 0.99))).rgb) * 0.5;
++      }
+       void main() {
+-        vec2 frontUv = vPosition.xy * 0.47 + 0.5;
+-        vec2 backUv = vec2(-vPosition.x, vPosition.y) * 0.47 + 0.5;
+-        vec3 frontCover = texture2D(uCover, clamp(frontUv,0.01,0.99)).rgb;
+-        vec3 backCover = texture2D(uCover, clamp(backUv,0.01,0.99)).rgb;
+-        vec3 cover = mix(backCover, frontCover, smoothstep(-0.08, 0.08, vPosition.z));
++        vec3 p = normalize(vPosition);
++        vec2 uv = vec2(p.z < 0.0 ? -p.x : p.x, p.y) * 0.47 + 0.5;
++        vec3 cover = texture2D(uCover, clamp(uv, 0.01, 0.99)).rgb;
++        float belt = abs(p.z) / uSeamWidth;
++        if (belt < 1.0) {
++          // Quintic interpolation has zero first/second derivatives at both ends.
++          // Only the side belt is softened; the front/back artwork stays sharp.
++          float t = clamp(belt, 0.0, 1.0);
++          float weight = t*t*t*(t*(t*6.0-15.0)+10.0);
++          vec3 seam = edgePair(uv.y)*0.5
++                    + (edgePair(uv.y-uEdgeBlur)+edgePair(uv.y+uEdgeBlur))*0.25;
++          cover = mix(seam, cover, weight);
++        }
+         float light = max(dot(normalize(vNormal),uLight),0.0);
+         float rim = pow(1.0-max(dot(normalize(vNormal),normalize(vView)),0.0),4.0);
+         float limb = 0.55+0.45*sqrt(max(dot(normalize(vNormal),normalize(vView)),0.0));
+diff --git a/tests/rotation.mjs b/tests/rotation.mjs
+index 389fde5..15d5d91 100644
+--- a/tests/rotation.mjs
++++ b/tests/rotation.mjs
+@@ -25,11 +25,11 @@ async function ready(target = page) {
+ }
+ async function star(target = page) { return JSON.parse((await state(target)).projectedTargets).find(node => node.id === '@album-star') }
+ async function pause(target = page) {
+-  if ((await state(target)).playing === 'true') await target.keyboard.press('Space')
++  if ((await state(target)).playing === 'true') await target.getByRole('button', { name: '暂停动画', exact: true }).click()
+   await expect(target.locator('canvas')).toHaveAttribute('data-playing', 'false')
+ }
+ async function play(target = page) {
+-  if ((await state(target)).playing !== 'true') await target.keyboard.press('Space')
++  if ((await state(target)).playing !== 'true') await target.getByRole('button', { name: '继续动画', exact: true }).click()
+   await expect(target.locator('canvas')).toHaveAttribute('data-playing', 'true')
+ }
+ async function flick(target = page) {
+@@ -69,8 +69,9 @@ try {
+ 
+   await play()
+   const auto = quaternion(await state())
+-  await page.waitForTimeout(400)
+-  assert.ok(difference(auto, quaternion(await state())) > .001)
++  // Software rendering may produce very few frames in 400 ms. Verify actual
++  // orientation progress instead of assuming a wall-clock frame rate.
++  await expect.poll(async () => difference(auto, quaternion(await state())), { timeout: 15000 }).toBeGreaterThan(.001)
+   await flick()
+   const released = await state()
+   await page.waitForTimeout(220)
+diff --git a/vite.config.ts b/vite.config.ts
+index 832a6c1..eb0976e 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -1,7 +1,8 @@
+ import { defineConfig } from 'vite'
+ import react from '@vitejs/plugin-react'
+ 
+-export default defineConfig({
++export default defineConfig(({ mode }) => ({
++  base: mode === 'hall' ? '/universe/' : '/',
+   plugins: [react()],
+   build: { chunkSizeWarningLimit: 1600 },
+   // Music World (127.0.0.1:3002) sends no CORS headers, so the browser has to reach
+@@ -23,4 +24,4 @@ export default defineConfig({
+       },
+     },
+   },
+-})
++}))
+diff --git a/src/lib/albumSurface.ts b/src/lib/albumSurface.ts
+new file mode 100644
+index e69de29..616642f 100644
+--- /dev/null
++++ b/src/lib/albumSurface.ts
+@@ -0,0 +1,22 @@
++export interface AlbumSurfaceConfig {
++  /** Half width of the blend belt in normalized sphere coordinates. */
++  seamWidth: number
++  /** Distance of edge samples from the image border. */
++  edgeInset: number
++  /** Vertical blur radius of the low frequency seam color, in UV units. */
++  edgeBlur: number
++}
++
++export const ALBUM_SURFACE_CONFIG: Readonly<AlbumSurfaceConfig> = Object.freeze({
++  seamWidth: .32, edgeInset: .065, edgeBlur: .045,
++})
++
++export function albumSurfaceConfig(options: Partial<AlbumSurfaceConfig> = {}): AlbumSurfaceConfig {
++  const bounded = (value: number | undefined, fallback: number, min: number, max: number) =>
++    Number.isFinite(value) ? Math.min(max, Math.max(min, value!)) : fallback
++  return {
++    seamWidth: bounded(options.seamWidth, ALBUM_SURFACE_CONFIG.seamWidth, .08, .6),
++    edgeInset: bounded(options.edgeInset, ALBUM_SURFACE_CONFIG.edgeInset, .01, .2),
++    edgeBlur: bounded(options.edgeBlur, ALBUM_SURFACE_CONFIG.edgeBlur, 0, .12),
++  }
++}
+diff --git a/src/hooks/useImmersivePlayer.ts b/src/hooks/useImmersivePlayer.ts
+new file mode 100644
+index e69de29..d4606f3 100644
+--- /dev/null
++++ b/src/hooks/useImmersivePlayer.ts
+@@ -0,0 +1,106 @@
++import { useCallback, useEffect, useRef, useState } from 'react'
++import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
++
++export const IMMERSIVE_PLAYER_CONFIG = { edge: 56, openDelay: 280, closeDelay: 900, swipeDistance: 32 } as const
++
++/** Timers run on pointer transitions, never in the 3D frame loop. */
++export function useImmersivePlayer(enabled: boolean, busy: boolean, dock: RefObject<HTMLDivElement | null>) {
++  const [revealed, setRevealed] = useState(false)
++  const open = useRef(false), blocked = useRef(busy), dismissed = useRef(false), touchPinned = useRef(false)
++  const enterTimer = useRef<number | undefined>(undefined), leaveTimer = useRef<number | undefined>(undefined)
++  const held = useRef(false), inside = useRef(false)
++  const keyboardIntent = useRef(false), keyboardFocus = useRef(false)
++  const gesture = useRef<{ y: number; pointerId: number } | null>(null)
++  const swiped = useRef(false)
++  blocked.current = busy
++  const clearTimers = useCallback(() => { clearTimeout(enterTimer.current); clearTimeout(leaveTimer.current); enterTimer.current = leaveTimer.current = undefined }, [])
++  const show = useCallback(() => { clearTimers(); dismissed.current = false; open.current = true; setRevealed(true) }, [clearTimers])
++  const close = useCallback(() => {
++    clearTimers(); dismissed.current = true; touchPinned.current = false; open.current = false; setRevealed(false)
++    if (dock.current?.contains(document.activeElement)) (document.activeElement as HTMLElement)?.blur()
++  }, [clearTimers, dock])
++
++  useEffect(() => {
++    if (!enabled) { clearTimers(); open.current = false; touchPinned.current = false; dismissed.current = false; setRevealed(false); return }
++    const inDock = (target: EventTarget | null) => target instanceof Node && !!dock.current?.contains(target)
++    const inHandle = (target: EventTarget | null) => target instanceof Element && !!target.closest('.immersive-player-handle')
++    const focused = () => keyboardFocus.current && inDock(document.activeElement)
++    const scheduleClose = () => {
++      clearTimeout(enterTimer.current); enterTimer.current = undefined
++      if (!open.current || leaveTimer.current !== undefined || held.current || focused() || blocked.current || touchPinned.current) return
++      leaveTimer.current = window.setTimeout(() => {
++        leaveTimer.current = undefined
++        if (!inside.current && !held.current && !focused() && !blocked.current && !touchPinned.current) { open.current = false; setRevealed(false) }
++      }, IMMERSIVE_PLAYER_CONFIG.closeDelay)
++    }
++    const move = (event: PointerEvent) => {
++      if (event.pointerType !== 'mouse') return
++      touchPinned.current = false
++      const near = event.clientY >= window.innerHeight - IMMERSIVE_PLAYER_CONFIG.edge
++      inside.current = inDock(event.target) || inHandle(event.target) || near
++      if (!inside.current) { dismissed.current = false; scheduleClose(); return }
++      clearTimeout(leaveTimer.current); leaveTimer.current = undefined
++      if (open.current || dismissed.current || blocked.current || enterTimer.current !== undefined) return
++      enterTimer.current = window.setTimeout(() => { enterTimer.current = undefined; if (inside.current && !blocked.current && !dismissed.current) show() }, IMMERSIVE_PLAYER_CONFIG.openDelay)
++    }
++    const leave = () => { inside.current = false; dismissed.current = false; scheduleClose() }
++    const down = (event: PointerEvent) => {
++      keyboardIntent.current = false; keyboardFocus.current = false
++      if (inDock(event.target)) { held.current = true; clearTimers() }
++      else if (event.pointerType !== 'mouse' && open.current && !inHandle(event.target) && !blocked.current) close()
++    }
++    const up = (event: PointerEvent) => {
++      held.current = false
++      if (event.pointerType === 'mouse') inside.current = inDock(document.elementFromPoint(event.clientX, event.clientY)) || event.clientY >= window.innerHeight - IMMERSIVE_PLAYER_CONFIG.edge
++      if (!inside.current) scheduleClose()
++    }
++    const focus = (event: FocusEvent) => { if (inDock(event.target)) { keyboardFocus.current = keyboardIntent.current; clearTimers(); if (!dismissed.current) show() } }
++    const blur = () => { queueMicrotask(() => { if (!focused()) scheduleClose() }) }
++    const key = (event: KeyboardEvent) => { if (event.key === 'Tab') keyboardIntent.current = true }
++    window.addEventListener('pointermove', move, { passive: true })
++    window.addEventListener('pointerdown', down, { passive: true })
++    window.addEventListener('pointerup', up, { passive: true })
++    window.addEventListener('pointercancel', up, { passive: true })
++    window.addEventListener('blur', leave)
++    document.addEventListener('pointerleave', leave)
++    document.addEventListener('focusin', focus)
++    document.addEventListener('focusout', blur)
++    document.addEventListener('keydown', key)
++    return () => {
++      clearTimers(); held.current = false; inside.current = false
++      window.removeEventListener('pointermove', move); window.removeEventListener('pointerdown', down)
++      window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up); window.removeEventListener('blur', leave)
++      document.removeEventListener('pointerleave', leave); document.removeEventListener('focusin', focus); document.removeEventListener('focusout', blur)
++      document.removeEventListener('keydown', key)
++    }
++  }, [enabled, dock, clearTimers, show, close])
++  useEffect(() => {
++    // Closing a queue/search overlay restarts the delay even if the mouse stays still.
++    if (!enabled || busy || !open.current || inside.current || touchPinned.current || held.current || dock.current?.contains(document.activeElement)) return
++    leaveTimer.current = window.setTimeout(() => { leaveTimer.current = undefined; if (!inside.current && !blocked.current) { open.current = false; setRevealed(false) } }, IMMERSIVE_PLAYER_CONFIG.closeDelay)
++    return () => { clearTimeout(leaveTimer.current); leaveTimer.current = undefined }
++  }, [enabled, busy, dock])
++
++  return {
++    revealed, close,
++    handle: {
++      onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => {
++        swiped.current = false; gesture.current = { y: event.clientY, pointerId: event.pointerId }
++        event.currentTarget.setPointerCapture(event.pointerId); event.stopPropagation()
++      },
++      onPointerUp: (event: ReactPointerEvent<HTMLButtonElement>) => {
++        const start = gesture.current; gesture.current = null
++        if (start?.pointerId !== event.pointerId) return
++        const delta = start.y - event.clientY
++        if (Math.abs(delta) >= IMMERSIVE_PLAYER_CONFIG.swipeDistance) {
++          swiped.current = true
++          if (delta > 0) { touchPinned.current = true; show() } else close()
++        }
++        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
++        event.stopPropagation()
++      },
++      onPointerCancel: () => { gesture.current = null; swiped.current = true },
++      onClick: () => { if (swiped.current) { swiped.current = false; return }; if (open.current) close(); else { touchPinned.current = true; show() } },
++    },
++  }
++}
+diff --git a/src/lib/json.ts b/src/lib/json.ts
+new file mode 100644
+index e69de29..26a40c1 100644
+--- /dev/null
++++ b/src/lib/json.ts
+@@ -0,0 +1,33 @@
++export type JsonGuard<T> = (value: unknown) => value is T
++
++/** Cache validated JSON, bound parsing work, and skip identical storage writes. */
++export function createJsonStore<T>(storage: () => Storage, key: string, validate: JsonGuard<T>, maxChars = 8 * 1024 * 1024) {
++  let previousRaw: string | null | undefined, previousValue: T | undefined
++  return {
++    read(fallback: T): T {
++      try {
++        const raw = storage().getItem(key)
++        if (raw === previousRaw) return previousValue ?? fallback
++        previousRaw = raw; previousValue = undefined
++        if (!raw || raw.length > maxChars) return fallback
++        const value: unknown = JSON.parse(raw)
++        if (validate(value)) previousValue = value
++      } catch { /* Corrupt or unavailable storage must not stop rendering. */ }
++      return previousValue ?? fallback
++    },
++    write(value: T): boolean {
++      if (!validate(value)) return false
++      try {
++        const raw = JSON.stringify(value)
++        if (raw.length > maxChars) return false
++        if (raw !== previousRaw || storage().getItem(key) !== raw) storage().setItem(key, raw)
++        previousRaw = raw; previousValue = value
++        return true
++      } catch { return false }
++    },
++  }
++}
++
++export function jsonRecord(value: unknown): Record<string, unknown> {
++  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
++}
+diff --git a/src/lib/deployment.ts b/src/lib/deployment.ts
+new file mode 100644
+index e69de29..ed3b136 100644
+--- /dev/null
++++ b/src/lib/deployment.ts
+@@ -0,0 +1,3 @@
++const base = import.meta.env?.BASE_URL || '/'
++export const MUSIC_API_BASE = base === '/universe/' ? '' : '/mw'
++export const universeAsset = (path: string) => base + path.replace(/^\//, '')
+diff --git a/src/lib/musicWorldTransport.ts b/src/lib/musicWorldTransport.ts
+new file mode 100644
+index e69de29..ddd5d71 100644
+--- /dev/null
++++ b/src/lib/musicWorldTransport.ts
+@@ -0,0 +1,20 @@
++import { MUSIC_API_BASE } from './deployment'
++import { jsonRecord } from './json'
++
++export class MusicRequestError extends Error {
++  constructor(message: string, public status: number, public code: string) { super(message) }
++}
++
++export async function musicWorldRequest<T>(path: string, init?: { method?: 'GET' | 'POST'; body?: unknown; signal?: AbortSignal }): Promise<T> {
++  const method = init?.method || 'GET'
++  const response = await fetch(MUSIC_API_BASE + path, {
++    method, credentials: 'same-origin', cache: 'no-store', signal: init?.signal,
++    headers: { 'X-Music-World': '1', ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}) },
++    body: method === 'POST' ? JSON.stringify(init?.body ?? {}) : undefined,
++  })
++  // A stopped gateway can return HTML. Report a service error instead of a JSON syntax error.
++  const result: unknown = await response.json().catch(() => null)
++  const error = jsonRecord(jsonRecord(result).error)
++  if (!response.ok || !result) throw new MusicRequestError(typeof error.message === 'string' ? error.message : '音乐服务暂时无法连接，请稍后重试。', response.status, typeof error.code === 'string' ? error.code : 'SERVICE_UNAVAILABLE')
++  return result as T
++}
+diff --git a/src/hooks/useHallEmbedding.ts b/src/hooks/useHallEmbedding.ts
+new file mode 100644
+index e69de29..d1eaf31 100644
+--- /dev/null
++++ b/src/hooks/useHallEmbedding.ts
+@@ -0,0 +1,24 @@
++import { useEffect } from 'react'
++import { navigateToMusicWorld } from '../lib/musicWorld'
++
++export function notifyUniverseReady() {
++  if (window.parent !== window) window.parent.postMessage({ type: 'music-universe:ready' }, window.location.origin)
++}
++
++export function useHallEmbedding() {
++  useEffect(() => {
++    if (window.parent === window) return
++    const click = (event: MouseEvent) => {
++      if (event.defaultPrevented || event.button || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return
++      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
++      if (!anchor) return
++      const url = new URL((anchor as HTMLAnchorElement).href)
++      const room = url.hash.slice(1)
++      if (url.origin !== location.origin || url.pathname !== '/' || !['hall', 'world', 'library', 'journey'].includes(room)) return
++      event.preventDefault()
++      navigateToMusicWorld(room as 'hall' | 'world' | 'library' | 'journey')
++    }
++    document.addEventListener('click', click, true)
++    return () => document.removeEventListener('click', click, true)
++  }, [])
++}
+diff --git a/src/lib/oauthWindow.ts b/src/lib/oauthWindow.ts
+new file mode 100644
+index e69de29..890c4fd 100644
+--- /dev/null
++++ b/src/lib/oauthWindow.ts
+@@ -0,0 +1,10 @@
++export function officialQqAuthorizeUrl(value: string) {
++  const url = new URL(value)
++  if (url.protocol !== 'https:' || url.hostname !== 'graph.qq.com' || url.port || url.username || url.password || url.pathname !== '/oauth2.0/authorize') throw new Error('QQ 官方授权地址无效，请重新连接。')
++  return url.href
++}
++export function openAuthWindow(): Window | null {
++  const popup = window.open('about:blank', '_blank', 'popup=yes,width=720,height=620')
++  if (popup) popup.opener = null
++  return popup
++}
+diff --git a/tests/json.test.ts b/tests/json.test.ts
+new file mode 100644
+index e69de29..bf7f06e 100644
+--- /dev/null
++++ b/tests/json.test.ts
+@@ -0,0 +1,27 @@
++import { test } from 'node:test'
++import assert from 'node:assert/strict'
++import { createJsonStore } from '../src/lib/json'
++
++function memory() {
++  const values = new Map<string, string>(); let writes = 0
++  return { storage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { writes++; values.set(key, value) } } as Storage, values, writes: () => writes }
++}
++const valid = (value: unknown): value is { id: string } => !!value && typeof value === 'object' && typeof (value as { id?: unknown }).id === 'string'
++test('JSON storage rejects corrupted, wrong-shaped and oversized data without breaking startup', () => {
++  const m = memory(), store = createJsonStore(() => m.storage, 'album', valid, 60), fallback = { id: 'default' }
++  for (const raw of ['{broken', 'null', '[]', '{"name":"wrong"}', JSON.stringify({ id: 'x'.repeat(100) })]) { m.values.set('album', raw); assert.deepEqual(store.read(fallback), fallback) }
++})
++test('JSON storage reuses validated data, skips duplicate writes, and observes external storage changes', () => {
++  const m = memory(); let checks = 0
++  const store = createJsonStore(() => m.storage, 'album', (value): value is { id: string } => { checks++; return valid(value) })
++  assert.ok(store.write({ id: 'one' })); assert.ok(store.write({ id: 'one' })); assert.equal(m.writes(), 1)
++  const before = checks; store.read({ id: 'default' }); store.read({ id: 'default' }); assert.equal(checks, before)
++  m.values.set('album', '{"id":"two"}'); assert.equal(store.read({ id: 'default' }).id, 'two')
++})
++test('JSON storage failure preserves the last valid value and prevents invalid/oversized writes', () => {
++  const m = memory(), store = createJsonStore(() => m.storage, 'album', valid, 40)
++  store.write({ id: 'valid' }); const raw = m.values.get('album')
++  assert.equal(store.write({ id: 'x'.repeat(100) }), false); assert.equal(m.values.get('album'), raw)
++  const privateStore = createJsonStore<{ id: string }>(() => { throw new Error('storage unavailable') }, 'key', valid)
++  assert.equal(privateStore.write({ id: 'safe' }), false); assert.deepEqual(privateStore.read({ id: 'default' }), { id: 'default' })
++})
+diff --git a/tests/universe-polish.mjs b/tests/universe-polish.mjs
+new file mode 100644
+index e69de29..a037a35 100644
+--- /dev/null
++++ b/tests/universe-polish.mjs
+@@ -0,0 +1,131 @@
++import { chromium, expect } from '@playwright/test'
++import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
++const output = process.env.TEST_OUTPUT_DIR || 'tests/reports/universe-polish'; mkdirSync(output, { recursive: true })
++const origin = process.env.TEST_HALL_ORIGIN || 'http://127.0.0.1:3002'
++const executablePath = existsSync(chromium.executablePath()) ? chromium.executablePath() : 'C:/Program Files/Google/Chrome/Application/chrome.exe'
++const browser = await chromium.launch({ executablePath, headless: true, ignoreDefaultArgs: ['--mute-audio'], args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
++const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
++const page = await context.newPage(), errors = [], checks = [], failures = []
++page.on('pageerror', error => errors.push(error.message))
++page.on('console', message => { if (message.type() === 'error' && !message.text().includes('favicon.ico')) errors.push(message.text()) })
++page.on('response', response => { if (response.status() >= 400) failures.push({ status: response.status(), path: new URL(response.url()).pathname }) })
++try {
++  await page.goto(origin + '/#hall', { waitUntil: 'domcontentloaded' })
++  const portal = page.getByTestId('hall-universe-entry')
++  await expect(portal).toHaveAttribute('href', '/#universe')
++  await portal.click()
++  await expect(page.locator('.mw-universe-transition')).toBeVisible()
++  expect((await page.locator('.mw-universe-transition').innerText()).trim()).toBe('')
++  await expect(page).toHaveURL(/#universe$/)
++  const frame = page.frameLocator('.mw-universe-room iframe')
++  await expect(frame.locator('canvas')).toHaveAttribute('data-frame-count', /\d+/, { timeout: 60000 })
++  await expect(page.locator('.mw-universe-room')).toHaveClass(/is-ready/, { timeout: 45000 })
++  await expect(page.locator('.mw-fog-transition')).toHaveCount(0, { timeout: 15000 })
++  expect((await page.locator('.mw-universe-loading').innerText()).trim()).toBe('')
++  const dimensions = await frame.getByTestId('galaxy-viewport').boundingBox()
++  expect(dimensions).toEqual({ x: 0, y: 0, width: 1440, height: 900 })
++  const guide = frame.getByRole('button', { name: '开始遨游', exact: true })
++  if (await guide.isVisible()) await guide.click()
++  await expect(frame.locator('.app-shell')).toHaveAttribute('data-album-cover', '/universe/covers/dont-tap-the-glass.jpg')
++  await page.screenshot({ path: output + '/merged-desktop.png' })
++  checks.push('Same-origin hall → universe; animation-only transition/loading; full-screen 3D; cover/font/background resources')
++  await frame.getByRole('button', { name: '沉浸模式', exact: true }).click()
++  const shell = frame.locator('.app-shell'), handle = frame.locator('.immersive-player-handle')
++  await expect(shell).toHaveClass(/hud-hidden/)
++  await page.mouse.move(700, 890)
++  await page.waitForTimeout(120)
++  expect((await shell.getAttribute('class')).includes('player-revealed')).toBe(false)
++  await page.mouse.move(700, 550)
++  await page.waitForTimeout(400)
++  expect((await shell.getAttribute('class')).includes('player-revealed')).toBe(false)
++  await page.mouse.move(700, 890)
++  await expect(shell).toHaveClass(/player-revealed/, { timeout: 2500 })
++  await page.mouse.move(700, 490)
++  await page.waitForTimeout(250)
++  await expect(shell).toHaveClass(/player-revealed/)
++  await expect.poll(async () => (await shell.getAttribute('class')).includes('player-revealed'), { timeout: 3000 }).toBe(false)
++  await handle.click()
++  await frame.getByRole('button', { name: '播放队列', exact: true }).click()
++  await page.mouse.move(100, 250)
++  await page.waitForTimeout(1400)
++  await expect(shell).toHaveClass(/player-revealed/)
++  await frame.getByRole('button', { name: '收起播放队列', exact: true }).click()
++  await frame.getByRole('button', { name: '关闭底部播放器', exact: true }).click()
++  expect((await shell.getAttribute('class')).includes('player-revealed')).toBe(false)
++  await page.screenshot({ path: output + '/immersive.png' })
++  checks.push('Hover dwell/cancel; delayed close; queue holds popup; manual close')
++  // Ignore messages from the top document instead of the expected iframe.
++  await page.evaluate(() => window.postMessage({ type: 'music-universe:navigate', room: 'hall' }, location.origin))
++  await page.waitForTimeout(300)
++  await expect(page).toHaveURL(/#universe$/)
++  await frame.getByRole('button', { name: '显示界面', exact: true }).click()
++  // A generated, untagged WAV exercises the real decoder/output without
++  // depending on third-party rights, metadata services, or an invented song.
++  const sampleRate = 22050, samples = sampleRate * 20, wav = Buffer.alloc(44 + samples * 2)
++  wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8)
++  wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22)
++  wav.writeUInt32LE(sampleRate, 24); wav.writeUInt32LE(sampleRate * 2, 28)
++  wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34); wav.write('data', 36); wav.writeUInt32LE(samples * 2, 40)
++  for (let i = 0; i < samples; i++) wav.writeInt16LE(Math.round(2500 * Math.sin(i / sampleRate * Math.PI * 2 * 440)), 44 + i * 2)
++  await frame.getByRole('button', { name: '音乐搜索', exact: true }).click()
++  await frame.getByTestId('music-search-file').setInputFiles({ name: 'local-output-check.wav', mimeType: 'audio/wav', buffer: wav })
++  const audio = frame.getByTestId('audio-engine')
++  await expect.poll(() => audio.evaluate(a => !a.paused && !a.muted && a.volume > 0 && a.currentTime > .15 && !a.error), { timeout: 15000 }).toBe(true)
++  await audio.evaluate(async a => {
++    const context = new AudioContext(), analyser = context.createAnalyser()
++    context.createMediaElementSource(a).connect(analyser); analyser.connect(context.destination)
++    await context.resume(); window.localOutputProbe = { context, analyser }
++  })
++  await expect.poll(() => audio.evaluate(() => {
++    const analyser = window.localOutputProbe.analyser, data = new Float32Array(analyser.fftSize)
++    analyser.getFloatTimeDomainData(data)
++    return Math.sqrt(data.reduce((sum, v) => sum + v * v, 0) / data.length)
++  }), { timeout: 10000 }).toBeGreaterThan(.01)
++  await audio.evaluate(async a => { a.pause(); await window.localOutputProbe.context.close() })
++  await frame.getByRole('button', { name: '关闭音乐搜索', exact: true }).click()
++  checks.push('Merged subpage local WAV: native playback, unmuted volume, decoded PCM reaching output destination')
++  await frame.locator('.site-header a[href$="#hall"]').click()
++  await expect(page).toHaveURL(/#hall$/, { timeout: 12000 })
++  await expect(portal).toBeVisible({ timeout: 15000 })
++  checks.push('Return animated to hall; message source/origin isolation')
++  const response = await context.request.get(origin + '/universe/index.html')
++  expect(response.status()).toBe(200)
++  expect(response.headers()['x-frame-options']).toBe('SAMEORIGIN')
++  expect(response.headers()['content-security-policy']).toContain("frame-ancestors 'self'")
++  const hallResponse = await context.request.get(origin + '/')
++  expect(hallResponse.headers()['x-frame-options']).toBe('DENY')
++  expect(hallResponse.headers()['content-security-policy']).toContain("'strict-dynamic'")
++  checks.push('Only universe subpage allows same-origin embedding; main CSP stays strict')
++  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 })
++  const m = await mobile.newPage()
++  m.on('pageerror', error => errors.push(error.message))
++  await m.goto(origin + '/#universe')
++  const mf = m.frameLocator('.mw-universe-room iframe')
++  await expect(mf.locator('canvas')).toHaveAttribute('data-frame-count', /\d+/, { timeout: 60000 })
++  await expect(m.locator('.mw-universe-room')).toHaveClass(/is-ready/, { timeout: 60000 })
++  if (await mf.getByRole('button', { name: '开始遨游', exact: true }).isVisible()) await mf.getByRole('button', { name: '开始遨游', exact: true }).tap()
++  await mf.getByRole('button', { name: '沉浸模式', exact: true }).tap()
++  const mh = mf.locator('.immersive-player-handle')
++  await mh.tap(); await expect(mf.locator('.app-shell')).toHaveClass(/player-revealed/)
++  await mf.getByRole('button', { name: '关闭底部播放器', exact: true }).tap()
++  const box = await mh.boundingBox(), session = await mobile.newCDPSession(m)
++  const x = box.x + box.width / 2, y = box.y + box.height / 2
++  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] })
++  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - 85 }] })
++  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
++  await expect(mf.locator('.app-shell')).toHaveClass(/player-revealed/)
++  await expect(mf.getByRole('button', { name: '关闭底部播放器', exact: true })).toBeVisible()
++  await expect.poll(() => mf.locator('.player-shell').evaluate(element => getComputedStyle(element).opacity)).toBe('1')
++  await m.waitForTimeout(500)
++  await m.screenshot({ path: output + '/mobile-player.png' })
++  checks.push('Mobile tap and actual touch swipe open; manual close; 390px viewport')
++  await mobile.close()
++  expect(failures).toEqual([])
++  expect(errors).toEqual([])
++  writeFileSync(output + '/results.json', JSON.stringify({ passed: true, checks, errors, failures }, null, 2))
++  console.log(JSON.stringify({ passed: true, checks }, null, 2))
++} catch (error) {
++  await page.screenshot({ path: output + '/failure.png' }).catch(() => {})
++  writeFileSync(output + '/results.json', JSON.stringify({ passed: false, checks, errors, failures, error: String(error) }, null, 2))
++  throw error
++} finally { await browser.close() }

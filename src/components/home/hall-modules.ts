@@ -9,9 +9,10 @@ export const hallModules = [
 ] as const;
 
 export type HallModule = (typeof hallModules)[number]["id"];
-export type HallStage = "hall" | HallModule;
+export type HallStage = "hall" | "universe" | HallModule;
 
 export function hallStageFromHash(): HallStage {
   const value = window.location.hash.slice(1);
+  if (value === "universe") return "universe";
   return hallModules.some((module) => module.id === value) ? value as HallModule : "hall";
 }

@@ -1,0 +1,49 @@
+{
+  "name": "music-universe",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5188 --strictPort",
+    "build": "tsc -b && vite build",
+    "build:hall": "tsc -b && vite build --mode hall",
+    "preview": "vite preview --host 127.0.0.1 --port 4188 --strictPort",
+    "test": "tsx --test tests/*.test.ts",
+    "test:e2e": "node tests/browser.mjs",
+    "test:hall": "node tests/hall-connection.mjs",
+    "test:interactions": "node tests/interactions.mjs",
+    "test:rotation": "node tests/rotation.mjs",
+    "test:camera": "node tests/camera.mjs",
+    "test:orbits": "node tests/orbits.mjs",
+    "test:follow": "node tests/playback-follow.mjs",
+    "test:audio-recovery": "node tests/audio-recovery.mjs",
+    "test:follow-rendering": "node tests/follow-rendering.mjs",
+    "test:axis-lighting": "node tests/axis-lighting.mjs",
+    "test:lyrics": "node tests/immersive-lyrics.mjs"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.1",
+    "@react-three/postprocessing": "^3.0.4",
+    "lucide-react": "^0.577.0",
+    "music-metadata": "^11.14.0",
+    "postprocessing": "^6.39.1",
+    "react": "~19.2.0",
+    "react-dom": "~19.2.0",
+    "three": "^0.183.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.183.1",
+    "@vitejs/plugin-react": "^6.1.1",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.2"
+  }
+}

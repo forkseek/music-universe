@@ -3,19 +3,18 @@ import { expect, test } from "@playwright/test";
 test.use({ viewport: { width: 1440, height: 900 } });
 test.setTimeout(90_000);
 
-test("the 2K plate loads at arrival, dissolves in, and animates the robot locally", async ({ page }) => {
+test("the 2K room loads immediately and retains its decorative robot animation", async ({ page }) => {
   const errors: string[] = [];
   const requested: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) => requested.push(request.url()));
-  await page.goto("/");
-  await expect(page.locator(".mw-hall-canvas.is-painted")).toBeVisible();
-  expect(requested.some((url) => url.includes("scene-hall-2k.webp"))).toBe(false);
-  await page.getByRole("button", { name: "进入大厅" }).click();
+  await page.goto("/#hall");
   const scene = page.locator(".mw-hall-living.is-loaded");
   await expect(scene).toHaveAttribute("data-scene-resolution", "2688x1536");
   await expect(scene).toHaveAttribute("data-motion-mode", "moving");
   await expect.poll(() => scene.evaluate((element) => Number(getComputedStyle(element).opacity))).toBe(1);
+  expect(requested.some((url) => url.includes("scene-hall-2k.webp"))).toBe(true);
+  expect(requested.some((url) => url.includes("music-world-continuous"))).toBe(false);
   const dimensions = await page.evaluate(() => new Promise<number[]>((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve([image.naturalWidth, image.naturalHeight]);
@@ -27,60 +26,53 @@ test("the 2K plate loads at arrival, dissolves in, and animates the robot locall
   const first = await surface.screenshot();
   await page.waitForTimeout(1250);
   expect((await surface.screenshot()).equals(first)).toBe(false);
-  await expect(page.locator(".mw-breathing-light")).toHaveCount(20);
-  const motion = await page.locator(".mw-robot-lamp").evaluate((element) => getComputedStyle(element).animationDuration);
-  expect(motion).toBe("5.6s");
+  await expect(page.locator(".mw-breathing-light")).toHaveCount(14);
+  await expect(page.locator(".mw-robot-lamp")).toHaveCSS("animation-duration", "5.6s");
   expect(errors).toEqual([]);
 });
 
-test("every icon describes its module in a hoverable cloud and Escape dismisses it", async ({ page }) => {
+test("the only portal smoothly zooms on hover, resets on leave and follows its destination", async ({ page }) => {
   await page.goto("/#hall");
-  await expect(page.locator(".mw-hall-ready")).toBeVisible();
-  for (const id of ["world", "library", "import", "demo", "journey", "guide", "qq"]) {
-    const target = page.locator('[data-portal="' + id + '"]');
-    await target.hover();
-    const hint = page.getByRole("tooltip");
-    await expect(hint).toBeVisible();
-    await expect(hint).toHaveAttribute("data-for-portal", id);
-    await expect(target).toHaveAttribute("aria-describedby", "mw-hall-tooltip");
-    expect((await hint.locator("p").innerText()).length).toBeGreaterThan(20);
-    await hint.hover();
-    await page.waitForTimeout(400);
-    await expect(hint).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(hint).toHaveCount(0);
-  }
-  await page.locator('[data-portal="import"]').focus();
-  await expect(page.getByRole("tooltip")).toHaveAttribute("data-for-portal", "import");
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/#import$/u);
-  await expect(page.locator(".mw-fog-transition")).toHaveCount(0, { timeout: 20_000 });
-  await expect(page.getByLabel("选择歌单文件")).toBeVisible();
+  const target = page.getByRole("link", { name: "进入专辑宇宙" });
+  await expect(target).toBeVisible();
+  const cover = target.locator("img");
+  await expect.poll(() => cover.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(512);
+  const coverBounds = await cover.boundingBox();
+  const doorwayBounds = await target.boundingBox();
+  expect(coverBounds!.width).toBeGreaterThan(doorwayBounds!.width);
+  expect(coverBounds!.width).toBeLessThan(290);
+  const hitArea = target.locator(".mw-universe-cover");
+  const restingHitArea = await hitArea.boundingBox();
+  const scale = () => cover.evaluate((element) => {
+    const matrix = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+    return Math.hypot(matrix.m11, matrix.m12, matrix.m13);
+  });
+  const restingTransform = await cover.evaluate((element) => getComputedStyle(element).transform);
+  const ring = target.locator(".mw-hotspot-ring");
+  const restingBorder = await ring.evaluate((element) => getComputedStyle(element).borderColor);
+  await target.hover({ position: { x: 15, y: 15 } });
+  await expect(ring).not.toHaveCSS("border-color", restingBorder);
+  await expect(cover).not.toHaveCSS("transform", restingTransform);
+  await expect.poll(scale).toBeGreaterThan(1.13);
+  expect(await scale()).toBeLessThan(1.15);
+  expect((await hitArea.boundingBox())!.width).toBeCloseTo(restingHitArea!.width, 1);
+  await page.mouse.move(40, 40);
+  await expect.poll(scale).toBeLessThan(1.005);
+  await expect(cover).toHaveCSS("transform", restingTransform);
   await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await expect(page.locator('[data-portal]:not([data-portal="universe"])')).toHaveCount(0);
+  await target.focus();
+  await expect(target).toBeFocused();
+  await expect(target).toHaveCSS("outline-style", "solid");
+  const destination = (await target.getAttribute("href"))!;
+  await page.route(destination, (route) => route.fulfill({ contentType: "text/html", body: "<title>Album universe destination fixture</title>" }));
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(destination);
+  await page.goBack();
+  await expect(page.getByRole("link", { name: "进入专辑宇宙" })).toBeVisible();
 });
 
-test("clouds stay inside portrait and small landscape viewports", async ({ page }) => {
-  await page.goto("/#hall");
-  await expect(page.locator(".mw-hall-ready")).toBeVisible();
-  for (const size of [{ width: 390, height: 844 }, { width: 320, height: 568 }, { width: 844, height: 390 }, { width: 667, height: 375 }, { width: 568, height: 320 }]) {
-    await page.setViewportSize(size);
-    for (const id of ["world", "library", "import", "demo", "journey", "guide", "qq"]) {
-      await page.locator('[data-portal="' + id + '"]').focus();
-      const hint = page.getByRole("tooltip");
-      await expect(hint).toBeVisible();
-      await page.waitForTimeout(420);
-      const bounds = await hint.boundingBox();
-      expect(bounds!.x).toBeGreaterThanOrEqual(0);
-      expect(bounds!.y).toBeGreaterThanOrEqual(0);
-      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(size.width + 1);
-      expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(size.height + 1);
-      await page.keyboard.press("Escape");
-    }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  }
-});
-
-test("the 2K still and navigation survive an unavailable WebGL renderer", async ({ page }) => {
+test("the 2K still and single album doorway survive an unavailable WebGL renderer", async ({ page }) => {
   await page.addInitScript(() => {
     const original = HTMLCanvasElement.prototype.getContext;
     Object.defineProperty(HTMLCanvasElement.prototype, "getContext", { value: function (this: HTMLCanvasElement, type: string, ...options: unknown[]) {
@@ -91,14 +83,11 @@ test("the 2K still and navigation survive an unavailable WebGL renderer", async 
   await page.goto("/#hall");
   await expect(page.locator(".mw-hall-living.is-loaded")).toHaveAttribute("data-motion-mode", "still");
   await expect(page.locator(".mw-living-still")).toHaveCSS("background-image", /scene-hall-2k.webp/u);
-  await page.locator('[data-portal="library"]').click();
-  await expect(page).toHaveURL(/#library$/u);
-  await expect(page.locator(".mw-fog-transition")).toHaveCount(0, { timeout: 20_000 });
-  await page.getByRole("button", { name: "回到音乐大厅" }).click();
-  await expect(page.locator(".mw-hall-living.is-loaded")).toHaveAttribute("data-motion-mode", "still");
+  await expect(page.getByRole("link", { name: "进入专辑宇宙" })).toBeVisible();
+  await expect(page.getByRole("button")).toHaveCount(0);
 });
 
-test("reduced motion keeps the high resolution scene stable and keyboard navigation usable", async ({ page }) => {
+test("reduced motion keeps the scene stable and album keyboard focus visible", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await expect(page.locator(".mw-hall-living.is-loaded")).toBeVisible();
@@ -108,9 +97,9 @@ test("reduced motion keeps the high resolution scene stable and keyboard navigat
   await page.waitForTimeout(600);
   expect((await surface.screenshot()).equals(first)).toBe(true);
   await expect(page.locator(".mw-robot-lamp")).toHaveCSS("animation-name", "none");
-  await page.locator('[data-portal="demo"]').focus();
-  await expect(page.getByRole("tooltip")).toBeVisible();
-  await expect(page.getByRole("tooltip")).toHaveCSS("animation-name", "none");
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/#demo$/u);
+  const target = page.getByRole("link", { name: "进入专辑宇宙" });
+  await target.focus();
+  await expect(target).toBeFocused();
+  await expect(target).toHaveCSS("outline-style", "solid");
+  await expect(target.locator("img")).toHaveCSS("transform", "none");
 });

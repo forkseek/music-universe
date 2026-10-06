@@ -1,0 +1,18 @@
+[
+  {
+    "deniedAutoplayRetriesResolvedSourceWithoutApiAwait": true,
+    "platformRequests": 1,
+    "probe": {
+      "primeCalls": 1,
+      "realCalls": 2,
+      "denied": true
+    }
+  },
+  {
+    "platformOutputsAudioAfterRetry": true,
+    "rms": 0.04262376601474597
+  },
+  {
+    "missingRemoteUrlReportsNativeResourceError": true
+  }
+]

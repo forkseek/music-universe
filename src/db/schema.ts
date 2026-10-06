@@ -12,6 +12,18 @@ export const users = sqliteTable("users", {
 });
 const owner = () => text("user_id").notNull().references(() => users.id, { onDelete: "cascade" });
 
+export const qqAccounts = sqliteTable("qq_accounts", {
+  userId: text("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  nickname: text("nickname").notNull().default(""), uin: text("uin").notNull().default(""),
+  guid: text("guid").notNull().default(""), credentials: text("credentials").notNull(),
+  createdAt: now(), updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+});
+
+export const platformAccounts = sqliteTable("platform_accounts", {
+  userId: owner(), provider: text("provider").notNull(), credentials: text("credentials").notNull(),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.userId, t.provider] })]);
+
 export const musicSources = sqliteTable("music_sources", {
   id: id(), userId: owner(), provider: text("provider").$type<MusicProviderId>().notNull(),
   label: text("label").notNull(), createdAt: now(),

@@ -5,6 +5,11 @@ node_modules/
 .next-ui-review/
 .next-hall-review/
 .next-player-review/
+.next-qq-integration/
+work/qq-integration/
+work/mineradio-reference/
+work/music-platform-*/
+work/music-platform-*.json
 out/
 coverage/
 playwright-report/
@@ -18,3 +23,6 @@ data/
 *.db-shm
 *.db-wal
 .DS_Store
+
+# Local packaging/build scratch (contains large tarballs and build output)
+work/public-deployment/

@@ -1,0 +1,52 @@
+import { chromium, expect } from '@playwright/test';
+import { mkdirSync, writeFileSync } from 'node:fs';
+const browser = await chromium.launch({headless:true,ignoreDefaultArgs:['--mute-audio'],args:['--enable-unsafe-swiftshader']});
+const page = await browser.newPage({viewport:{width:1440,height:900}});
+const results=[]; const errors=[];
+page.on('pageerror',error=>errors.push(error.message));
+mkdirSync('work/audio-output-review',{recursive:true});
+try {
+  await page.goto('http://127.0.0.1:5188/',{waitUntil:'domcontentloaded'});
+  await page.getByRole('button',{name:'显示界面',exact:true}).click();
+  await expect(page.getByTestId('player-time')).toHaveText('0:00');
+  const before=await page.getByTestId('audio-engine').evaluate(audio=>({hasSource:!!audio.currentSrc,paused:audio.paused,volume:audio.volume,muted:audio.muted}));
+  results.push({initial:before}); console.log(JSON.stringify(results.at(-1)));
+  await page.getByTestId('player-toggle').click();
+  await expect.poll(()=>page.getByTestId('audio-engine').evaluate(audio=>({source:!!audio.currentSrc,paused:audio.paused,ready:audio.readyState})),{timeout:60000}).toMatchObject({source:true,paused:false});
+  await expect(page.getByTestId('player-title')).toContainText('Big Poe');
+  await expect.poll(()=>page.getByTestId('audio-engine').evaluate(audio=>audio.currentTime),{timeout:15000}).toBeGreaterThan(0);
+  await page.evaluate(async()=>{
+    const element=document.querySelector('audio');
+    const context=new AudioContext();
+    const analyser=context.createAnalyser(); analyser.fftSize=1024;
+    context.createMediaElementSource(element).connect(analyser); analyser.connect(context.destination);
+    window.audioOutputProbe={context,analyser};
+    await context.resume();
+  });
+  const rms=()=>page.evaluate(()=>{const {analyser}=window.audioOutputProbe;const samples=new Float32Array(analyser.fftSize);analyser.getFloatTimeDomainData(samples);return Math.sqrt(samples.reduce((sum,x)=>sum+x*x,0)/samples.length)});
+  await expect.poll(rms,{timeout:15000}).toBeGreaterThan(0.0001);
+  results.push({planetTrack:'Big Poe',audioSignalRms:await rms(),status:await page.getByTestId('player-status').innerText(),withoutAutoplayOverride:true}); console.log(JSON.stringify(results.at(-1)));
+  await page.getByRole('button',{name:'静音',exact:true}).click();
+  await expect.poll(()=>page.getByTestId('audio-engine').evaluate(audio=>audio.muted)).toBe(true);
+  await page.getByRole('button',{name:'开启声音',exact:true}).click();
+  await expect.poll(()=>page.getByTestId('audio-engine').evaluate(audio=>audio.muted)).toBe(false);
+  await page.getByLabel('音量',{exact:true}).fill('0.5');
+  await expect.poll(()=>page.getByTestId('audio-engine').evaluate(audio=>audio.volume)).toBe(0.5);
+  results.push({volumeAndMute:true});
+  await page.getByTestId('player-toggle').click();
+  await expect.poll(()=>page.getByTestId('audio-engine').evaluate(audio=>audio.paused)).toBe(true);
+  await expect(page.getByTestId('player-status')).toContainText('已暂停');
+  await page.getByTestId('player-toggle').click();
+  await expect.poll(()=>page.getByTestId('audio-engine').evaluate(audio=>audio.paused)).toBe(false);
+  await page.getByRole('button',{name:'下一首',exact:true}).click();
+  await expect(page.getByTestId('player-title')).toContainText('Sugar on My Tongue',{timeout:60000});
+  await expect.poll(()=>page.getByTestId('audio-engine').evaluate(audio=>audio.paused),{timeout:25000}).toBe(false);
+  await expect.poll(rms,{timeout:15000}).toBeGreaterThan(0.0001);
+  results.push({nextTrack:'Sugar on My Tongue',audioSignalRms:await rms(),status:await page.getByTestId('player-status').innerText()}); console.log(JSON.stringify(results.at(-1)));
+  const duration=await page.getByTestId('audio-engine').evaluate(audio=>audio.duration);
+  await page.getByTestId('player-seek').fill(String(Math.min(10,duration-1)));
+  await expect.poll(()=>page.getByTestId('audio-engine').evaluate(audio=>audio.currentTime)).toBeGreaterThan(9);
+  results.push({seeking:true,errors});
+  await page.screenshot({path:'work/audio-output-review/player.png'});
+} catch(error) { results.push({failure:error.message,errors}); await page.screenshot({path:'work/audio-output-review/failure.png'}).catch(()=>{});process.exitCode=1; }
+finally { writeFileSync('work/audio-output-review/results.json',JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));await browser.close(); }

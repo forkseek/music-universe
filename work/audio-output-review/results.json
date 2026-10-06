@@ -1,0 +1,28 @@
+[
+  {
+    "initial": {
+      "hasSource": false,
+      "paused": true,
+      "volume": 0.8,
+      "muted": false
+    }
+  },
+  {
+    "planetTrack": "Big Poe",
+    "audioSignalRms": 0.0431646118013956,
+    "status": "正在播放 · 试听片段",
+    "withoutAutoplayOverride": true
+  },
+  {
+    "volumeAndMute": true
+  },
+  {
+    "nextTrack": "Sugar on My Tongue",
+    "audioSignalRms": 0.04353413836097605,
+    "status": "正在播放 · 试听片段"
+  },
+  {
+    "seeking": true,
+    "errors": []
+  }
+]

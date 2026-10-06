@@ -1,0 +1,40 @@
+services:
+  music-world:
+    image: music-world-public:${RELEASE_TAG:-candidate}
+    build:
+      context: ../..
+      dockerfile: deploy/public/Dockerfile
+      args:
+        NEXT_PUBLIC_ENABLE_QQMUSIC: ${NEXT_PUBLIC_ENABLE_QQMUSIC:-false}
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      APP_ORIGIN: https://${DOMAIN:?Set DOMAIN in deploy/public/.env}
+      DATABASE_PATH: /app/data/music-world.db
+      SQLITE_JOURNAL_MODE: WAL
+      MUSIC_INTEGRATION_ROOT: /app/integrations/mineradio
+      MUSIC_DESKTOP_LOGIN: "0"
+      MUSIC_CREDENTIAL_SECRET: ${MUSIC_CREDENTIAL_SECRET:?Generate a persistent secret}
+      NEXT_PUBLIC_ENABLE_QQMUSIC: ${NEXT_PUBLIC_ENABLE_QQMUSIC:-false}
+      QQ_CONNECT_APP_ID: ${QQ_CONNECT_APP_ID:-}
+      QQ_CONNECT_APP_SECRET: ${QQ_CONNECT_APP_SECRET:-}
+      QQ_CONNECT_REDIRECT_URI: ${QQ_CONNECT_REDIRECT_URI:-}
+      RADIOHAND_API_ORIGIN: ""
+      AI_PROVIDER: none
+    volumes:
+      - music-world-data:/app/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  music-world-data:

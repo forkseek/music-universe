@@ -1,0 +1,339 @@
+--- a/integrations/mineradio/worker.cjs
++++ b/integrations/mineradio/worker.cjs
+@@ -8,6 +8,11 @@
+ const decode = new TrackDecryptor();
+ console.log = console.warn = console.error = () => {};
+ 
++function lyricResult(provider, id, value) {
++  const lyric = typeof value === 'string' && value.length <= 512 * 1024 && Buffer.byteLength(value, 'utf8') <= 512 * 1024 ? value : '';
++  return { provider, trackId: String(id), lyric };
++}
++
+ async function invoke(provider, action, args, cookie) {
+   if (action === 'decode' && provider === 'qishui') {
+     const result = decode.decrypt({ encryptedBuffer: Buffer.from(args.buffer), spadeA: args.auth });
+@@ -15,6 +20,11 @@
+   }
+   if (provider === 'netease') {
+     const options = { cookie: cookie || '', timestamp: Date.now() };
++    if (action === 'lyrics') {
++      const response = await netease.lyric({ id: args.id, timestamp: Date.now() });
++      if (response.body.code !== 200) throw new Error('lyrics');
++      return lyricResult(provider, args.id, response.body.lrc?.lyric);
++    }
+     if (action === 'search') {
+       let response = await netease.cloudsearch({ ...options, keywords: args.query, limit: args.limit, offset: args.offset, type: 1 });
+       if (response.body.code !== 200) response = await netease.search({ ...options, keywords: args.query, limit: args.limit, offset: args.offset, type: 1 });
+@@ -73,11 +83,19 @@
+     }
+   }
+   if (provider === 'kugou') {
++    if (action === 'lyrics') {
++      const response = await kugou.handleKugouLyric(args.id, '', 0);
++      return lyricResult(provider, args.id, response.lyric);
++    }
+     if (action === 'search') return { songs: await kugou.handleKugouSearch(args.query, args.limit, cookie, args.offset) };
+     if (action === 'status') return cookie ? kugou.getKugouLoginInfo(cookie) : { loggedIn: false };
+     if (action === 'resolve') return kugou.handleKugouSongUrl({ ...args, quality: 'standard' }, cookie);
+   }
+   if (provider === 'qishui') {
++    if (action === 'lyrics') {
++      const response = await qishui.handleQishuiLyric(args.id, '');
++      return lyricResult(provider, args.id, response.lyric);
++    }
+     if (action === 'search') return qishui.handleQishuiSearch(args.query, args.limit, cookie, args.offset);
+     if (action === 'status') return cookie ? qishui.handleQishuiStatus(cookie) : { loggedIn: false };
+     if (action === 'resolve') return qishui.handleQishuiSongUrl({ ...args, quality: 'standard' }, cookie);
+--- a/src/app/api/music/[provider]/[action]/route.ts
++++ b/src/app/api/music/[provider]/[action]/route.ts
+@@ -3,6 +3,7 @@
+ import { RequestError } from "@/lib/server/errors";
+ import { parsePlatform, rateLimitMusic, resolvePlatformSong, searchPlatform } from "@/lib/music/platforms/catalog";
+ import { cancelLogin, logoutPlatform, platformStatus, pollPlatformLogin, startPlatformLogin } from "@/lib/music/platforms/login";
++import { readPlatformLyrics } from "@/lib/music/platforms/lyrics";
+ import { revokeMedia } from "@/lib/music/platforms/media";
+ import { record, text } from "@/lib/music/platforms/types";
+ export const runtime = "nodejs";
+@@ -14,6 +15,7 @@
+     const provider = parsePlatform(params.provider); rateLimitMusic(userId, params.action);
+     if (params.action === "status") return platformStatus(userId, provider, request.signal);
+     if (params.action === "search") return searchPlatform(userId, provider, request.nextUrl.searchParams.get("q") || "", Number(request.nextUrl.searchParams.get("page") || 1), request.signal);
++    if (params.action === "lyrics") return readPlatformLyrics(userId, provider, request.nextUrl.searchParams.get("id") || "", request.signal);
+     if (params.action === "poll") return pollPlatformLogin(userId, provider, request.nextUrl.searchParams.get("id") || "");
+     throw new RequestError(404, "无效的音乐请求。", "ACTION_NOT_FOUND");
+   });
+--- a/src/lib/music/platforms/lyrics.ts
++++ b/src/lib/music/platforms/lyrics.ts
+@@ -0,0 +1,118 @@
++import "server-only";
++import { RequestError } from "@/lib/server/errors";
++import { radiohandLyric } from "../providers/radiohand-qq";
++import { platformCall } from "./runtime";
++import { platformLabels, record, type Platform } from "./types";
++
++export interface PlatformLyrics {
++  provider: Platform;
++  trackId: string;
++  lyric: string;
++  available: boolean;
++  message?: string;
++}
++
++/** Bounds apply to decoded UTF-8, not just the number of JavaScript characters. */
++export const LYRIC_LIMITS = Object.freeze({
++  maxBytes: 512 * 1024,
++  timeoutMs: 12_000,
++  ttlMs: 5 * 60_000,
++  unavailableTtlMs: 20_000,
++  entriesPerUser: 16,
++  maxEntries: 128,
++  maxCacheBytes: 16 * 1024 * 1024,
++});
++
++interface CachedLyrics { userId: string; result: PlatformLyrics; expires: number; bytes: number }
++const runtime = globalThis as typeof globalThis & { musicLyrics?: Map<string, CachedLyrics> };
++const cache = () => runtime.musicLyrics ??= new Map();
++const unavailable = (provider: Platform, trackId: string, message = "这首歌曲暂未提供可用歌词，可导入本地 LRC。"):
++  PlatformLyrics => ({ provider, trackId, lyric: "", available: false, message });
++
++function validateIdentity(provider: Platform, trackId: string) {
++  const valid = provider === "qq" ? /^[A-Za-z0-9]{1,64}$/.test(trackId)
++    : provider === "netease" || provider === "qishui" ? /^\d{1,20}$/.test(trackId)
++      : provider === "kugou" && /^[A-Za-z0-9_-]{1,100}$/.test(trackId);
++  if (!Object.hasOwn(platformLabels, provider) || !valid) {
++    throw new RequestError(400, "歌词需要有效的平台歌曲标识。", "LYRIC_ID_INVALID");
++  }
++}
++
++function remember(userId: string, key: string, result: PlatformLyrics) {
++  const entries = cache();
++  for (const [id, entry] of entries) if (entry.expires <= Date.now()) entries.delete(id);
++  entries.delete(key);
++  let ownCount = 0, bytes = Buffer.byteLength(result.lyric, "utf8");
++  for (const entry of entries.values()) { if (entry.userId === userId) ownCount++; bytes += entry.bytes; }
++  for (const [id, entry] of entries) {
++    if (ownCount < LYRIC_LIMITS.entriesPerUser) break;
++    if (entry.userId === userId) { entries.delete(id); ownCount--; bytes -= entry.bytes; }
++  }
++  while (entries.size >= LYRIC_LIMITS.maxEntries || bytes > LYRIC_LIMITS.maxCacheBytes) {
++    const oldest = entries.keys().next().value;
++    if (oldest === undefined) break;
++    bytes -= entries.get(oldest)!.bytes;
++    entries.delete(oldest);
++  }
++  entries.set(key, {
++    userId, result, bytes: Buffer.byteLength(result.lyric, "utf8"),
++    expires: Date.now() + (result.available ? LYRIC_LIMITS.ttlMs : LYRIC_LIMITS.unavailableTtlMs),
++  });
++}
++
++function normalize(provider: Platform, trackId: string, payload: unknown): PlatformLyrics {
++  const value = record(payload);
++  // If the adapter supplies an identity, it must match. Never recover by song title.
++  const returnedId = value.trackId ?? value.id ?? value.hash;
++  if (returnedId !== undefined && (provider === "kugou" ? String(returnedId).toLowerCase() !== trackId.toLowerCase() : String(returnedId) !== trackId)) return unavailable(provider, trackId);
++  if (value.provider !== undefined && value.provider !== provider) return unavailable(provider, trackId);
++  const raw = value.lyric;
++  if (typeof raw !== "string" || raw.length > LYRIC_LIMITS.maxBytes || Buffer.byteLength(raw, "utf8") > LYRIC_LIMITS.maxBytes) {
++    return unavailable(provider, trackId);
++  }
++  // Keep LRC line breaks and timestamps; the shared metadata text() helper removes them.
++  const lyric = raw.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim();
++  return lyric ? { provider, trackId, lyric, available: true } : unavailable(provider, trackId);
++}
++
++/** Uses the playing track's native platform ID only; no title search or cross-platform substitution. */
++export async function readPlatformLyrics(userId: string, provider: Platform, trackId: string, signal: AbortSignal): Promise<PlatformLyrics> {
++  signal.throwIfAborted();
++  validateIdentity(provider, trackId);
++  const key = JSON.stringify([userId, provider, trackId]);
++  const hit = cache().get(key);
++  if (hit && hit.expires > Date.now()) return { ...hit.result };
++  // Kugou's existing lyric adapter needs the recording hash. A mix-song ID alone is insufficient.
++  if (provider === "kugou" && !/^[a-fA-F0-9]{32}$/.test(trackId)) {
++    return unavailable(provider, trackId, "当前酷狗曲目缺少歌词所需的歌曲 hash，可导入本地 LRC。");
++  }
++
++  const upstream = new AbortController();
++  const linked = AbortSignal.any([signal, upstream.signal]);
++  let timer: ReturnType<typeof setTimeout> | undefined;
++  let removeAbort: (() => void) | undefined;
++  try {
++    const cancelled = new Promise<never>((_, reject) => {
++      const abort = () => reject(linked.reason);
++      linked.addEventListener("abort", abort, { once: true });
++      removeAbort = () => linked.removeEventListener("abort", abort);
++      timer = setTimeout(() => upstream.abort(new DOMException("Lyric lookup timed out", "TimeoutError")), LYRIC_LIMITS.timeoutMs);
++    });
++    // Public lyric lookups do not read or forward account Cookies or playback credentials.
++    const request = provider === "qq" ? radiohandLyric(trackId, linked)
++      : platformCall(provider, "lyrics", { id: trackId }, "", linked);
++    const payload = await Promise.race([request, cancelled]);
++    signal.throwIfAborted();
++    const result = normalize(provider, trackId, payload);
++    remember(userId, key, result);
++    return { ...result };
++  } catch (error) {
++    if (signal.aborted) throw signal.reason;
++    // Upstream errors can contain account/request details; expose only a stable safe message.
++    if (error instanceof RequestError && error.status === 429) throw error;
++    return unavailable(provider, trackId, "歌词服务暂时没有响应，可稍后重试或导入本地 LRC。");
++  } finally {
++    if (timer) clearTimeout(timer);
++    removeAbort?.();
++  }
++}
+--- a/tests/music-lyrics.test.ts
++++ b/tests/music-lyrics.test.ts
+@@ -0,0 +1,151 @@
++import { readFileSync } from 'node:fs';
++import vm from 'node:vm';
++import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
++import { LYRIC_LIMITS, readPlatformLyrics } from '@/lib/music/platforms/lyrics';
++import type { Platform } from '@/lib/music/platforms/types';
++
++const fixtures = vi.hoisted(() => ({ call: vi.fn(), qq: vi.fn() }));
++vi.mock('@/lib/music/platforms/runtime', () => ({ platformCall: fixtures.call }));
++vi.mock('@/lib/music/providers/radiohand-qq', () => ({ radiohandLyric: fixtures.qq }));
++const globals = globalThis as typeof globalThis & { musicLyrics?: Map<string, { userId: string; bytes: number }> };
++const signal = () => new AbortController().signal;
++const sample = '[00:01.20]Fixture line one\n[00:03.50]Fixture line two';
++
++beforeEach(() => { fixtures.call.mockReset(); fixtures.qq.mockReset(); globals.musicLyrics?.clear(); });
++afterEach(() => { globals.musicLyrics?.clear(); vi.useRealTimers(); });
++
++describe('playing-track lyric adapter', () => {
++  it('uses the exact QQ song ID and preserves timestamps and newlines without forwarding extra upstream fields', async () => {
++    fixtures.qq.mockResolvedValue({ provider: 'qq', lyric: '\uFEFF' + sample.replace('\n', '\r\n'), cookie: 'PRIVATE_DO_NOT_EXPOSE' });
++    const result = await readPlatformLyrics('owner', 'qq', 'qqSong01', signal());
++    expect(result).toEqual({ provider: 'qq', trackId: 'qqSong01', lyric: sample, available: true });
++    expect(fixtures.qq).toHaveBeenCalledWith('qqSong01', expect.any(AbortSignal));
++    expect(fixtures.call).not.toHaveBeenCalled();
++  });
++
++  it.each<[Platform, string]>([['netease', '123'], ['kugou', 'a'.repeat(32)], ['qishui', '123456789']])(
++    'requests %s lyrics without login cookies or a title search', async (provider, id) => {
++      fixtures.call.mockResolvedValue({ provider, trackId: id, lyric: sample });
++      const result = await readPlatformLyrics('owner', provider, id, signal());
++      expect(result.available).toBe(true);
++      expect(fixtures.call).toHaveBeenCalledExactlyOnceWith(provider, 'lyrics', { id }, '', expect.any(AbortSignal));
++    },
++  );
++
++  it('reports a Kugou mix-song ID without a recording hash as unavailable instead of choosing another song', async () => {
++    const result = await readPlatformLyrics('owner', 'kugou', '12345', signal());
++    expect(result).toMatchObject({ provider: 'kugou', trackId: '12345', lyric: '', available: false });
++    expect(fixtures.call).not.toHaveBeenCalled();
++  });
++
++  it.each<[Platform, string]>([['qq', 'http://127.0.0.1/private'], ['qq', 'abc?token=x'], ['netease', 'name'], ['qishui', '-42'], ['kugou', 'a/b'], ['qq', 'x'.repeat(65)]])(
++    'rejects a malformed %s ID before any provider call', async (provider, id) => {
++      await expect(readPlatformLyrics('owner', provider, id, signal())).rejects.toMatchObject({ code: 'LYRIC_ID_INVALID' });
++      expect(fixtures.call).not.toHaveBeenCalled(); expect(fixtures.qq).not.toHaveBeenCalled();
++    },
++  );
++
++  it('isolates caches by account, source and track and never serves a different identity', async () => {
++    fixtures.call.mockResolvedValue({ lyric: sample });
++    const first = await readPlatformLyrics('one', 'netease', '1', signal());
++    first.lyric = 'caller mutation';
++    expect((await readPlatformLyrics('one', 'netease', '1', signal())).lyric).toBe(sample);
++    await readPlatformLyrics('two', 'netease', '1', signal());
++    await readPlatformLyrics('one', 'netease', '2', signal());
++    await readPlatformLyrics('one', 'qishui', '1', signal());
++    expect(fixtures.call).toHaveBeenCalledTimes(4);
++    fixtures.call.mockResolvedValue({ trackId: 'another-song', lyric: sample });
++    expect((await readPlatformLyrics('one', 'netease', '3', signal())).available).toBe(false);
++    fixtures.call.mockResolvedValue({ provider: 'qq', lyric: sample });
++    expect((await readPlatformLyrics('one', 'netease', '4', signal())).available).toBe(false);
++  });
++
++  it('expires successful and empty responses and keeps a bounded cache per user', async () => {
++    vi.useFakeTimers();
++    fixtures.call.mockResolvedValue({ lyric: sample });
++    await readPlatformLyrics('one', 'netease', '1', signal());
++    await vi.advanceTimersByTimeAsync(LYRIC_LIMITS.ttlMs + 1);
++    await readPlatformLyrics('one', 'netease', '1', signal());
++    expect(fixtures.call).toHaveBeenCalledTimes(2);
++    fixtures.call.mockResolvedValue({ lyric: '' });
++    await readPlatformLyrics('one', 'netease', '2', signal());
++    await readPlatformLyrics('one', 'netease', '2', signal());
++    expect(fixtures.call).toHaveBeenCalledTimes(3);
++    await vi.advanceTimersByTimeAsync(LYRIC_LIMITS.unavailableTtlMs + 1);
++    await readPlatformLyrics('one', 'netease', '2', signal());
++    expect(fixtures.call).toHaveBeenCalledTimes(4);
++    for (let id = 3; id <= LYRIC_LIMITS.entriesPerUser + 4; id++) await readPlatformLyrics('one', 'netease', String(id), signal());
++    expect([...globals.musicLyrics!.values()].filter(item => item.userId === 'one')).toHaveLength(LYRIC_LIMITS.entriesPerUser);
++  });
++
++  it('bounds global cache memory and entry count', async () => {
++    fixtures.call.mockResolvedValue({ lyric: sample });
++    for (let index = 0; index < LYRIC_LIMITS.maxEntries + 4; index++) await readPlatformLyrics('user-' + index, 'netease', '1', signal());
++    expect(globals.musicLyrics?.size).toBe(LYRIC_LIMITS.maxEntries);
++    fixtures.call.mockResolvedValue({ lyric: '[00:01]' + 'x'.repeat(LYRIC_LIMITS.maxBytes - 7) });
++    for (let index = 0; index < 34; index++) await readPlatformLyrics('large-' + index, 'netease', '1', signal());
++    expect([...globals.musicLyrics!.values()].reduce((sum, value) => sum + value.bytes, 0)).toBeLessThanOrEqual(LYRIC_LIMITS.maxCacheBytes);
++  });
++
++  it('rejects oversized decoded UTF-8 lyrics and non-string payloads without truncating timestamps', async () => {
++    fixtures.call.mockResolvedValue({ lyric: '[00:01]' + '字'.repeat(Math.ceil(LYRIC_LIMITS.maxBytes / 3)) });
++    expect((await readPlatformLyrics('one', 'netease', '1', signal())).available).toBe(false);
++    fixtures.call.mockResolvedValue({ lyric: { content: sample } });
++    expect((await readPlatformLyrics('one', 'netease', '2', signal())).available).toBe(false);
++  });
++
++  it('does not cache an aborted or late response after switching tracks', async () => {
++    let finish!: (value: unknown) => void;
++    fixtures.call.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
++    const controller = new AbortController();
++    const pending = readPlatformLyrics('one', 'netease', '1', controller.signal);
++    const assertion = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
++    controller.abort();
++    await assertion;
++    finish({ lyric: sample });
++    await Promise.resolve();
++    expect(globals.musicLyrics?.size || 0).toBe(0);
++    fixtures.call.mockResolvedValue({ lyric: sample });
++    expect((await readPlatformLyrics('one', 'netease', '1', signal())).available).toBe(true);
++    expect(fixtures.call).toHaveBeenCalledTimes(2);
++  });
++
++  it('returns a safe unavailable result on timeout or upstream errors without blocking music playback', async () => {
++    vi.useFakeTimers();
++    fixtures.call.mockImplementation(() => new Promise(() => {}));
++    const request = readPlatformLyrics('owner', 'netease', '1', signal());
++    await vi.advanceTimersByTimeAsync(LYRIC_LIMITS.timeoutMs);
++    expect(await request).toMatchObject({ lyric: '', available: false });
++    fixtures.call.mockRejectedValue(new Error('PRIVATE_DO_NOT_EXPOSE'));
++    const failure = await readPlatformLyrics('owner', 'netease', '2', signal());
++    expect(failure.available).toBe(false);
++    expect(JSON.stringify(failure)).not.toContain('PRIVATE_DO_NOT_EXPOSE');
++  });
++});
++
++describe('existing integration worker lyric dispatch', () => {
++  it('calls installed lyric functions with the native ID and no account cookie, bounding IPC payloads', async () => {
++    const netease = { lyric: vi.fn().mockResolvedValue({ body: { code: 200, lrc: { lyric: sample } } }) };
++    const kugou = { handleKugouLyric: vi.fn().mockResolvedValue({ lyric: sample }) };
++    const qishui = { handleQishuiLyric: vi.fn().mockResolvedValue({ lyric: sample }) };
++    let message!: (value: object) => Promise<void>;
++    const send = vi.fn();
++    const source = readFileSync(new URL('../integrations/mineradio/worker.cjs', import.meta.url), 'utf8');
++    vm.runInNewContext(source, {
++      require: (id: string) => id === 'NeteaseCloudMusicApi' ? netease : id.endsWith('/kugou-api.js') ? kugou : id.endsWith('/qishui-api.js') ? qishui
++        : id.endsWith('/track-decryptor.js') ? { TrackDecryptor: class {} } : {},
++      process: { on: (event: string, handler: typeof message) => { if (event === 'message') message = handler; }, send, exit: vi.fn() },
++      Buffer, console: { log() {}, warn() {}, error() {} },
++    });
++    await message({ id: 'request-1', provider: 'netease', action: 'lyrics', args: { id: '42' }, cookie: 'MUST_NOT_BE_FORWARDED' });
++    expect(netease.lyric).toHaveBeenCalledExactlyOnceWith({ id: '42', timestamp: expect.any(Number) });
++    expect(send).toHaveBeenLastCalledWith({ id: 'request-1', result: { provider: 'netease', trackId: '42', lyric: sample } });
++    await message({ id: 'request-2', provider: 'kugou', action: 'lyrics', args: { id: 'a'.repeat(32) }, cookie: 'MUST_NOT_BE_FORWARDED' });
++    expect(kugou.handleKugouLyric).toHaveBeenCalledExactlyOnceWith('a'.repeat(32), '', 0);
++    await message({ id: 'request-3', provider: 'qishui', action: 'lyrics', args: { id: '42' }, cookie: 'MUST_NOT_BE_FORWARDED' });
++    expect(qishui.handleQishuiLyric).toHaveBeenCalledExactlyOnceWith('42', '');
++    qishui.handleQishuiLyric.mockResolvedValue({ lyric: 'x'.repeat(LYRIC_LIMITS.maxBytes + 1) });
++    await message({ id: 'request-4', provider: 'qishui', action: 'lyrics', args: { id: '43' } });
++    expect(send).toHaveBeenLastCalledWith({ id: 'request-4', result: { provider: 'qishui', trackId: '43', lyric: '' } });
++  });
++});

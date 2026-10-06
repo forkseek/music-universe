@@ -2,6 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { z } from "@/lib/validation";
 import { RequestError } from "@/lib/server/errors";
+import { qqAccountCredentials } from "./qq-account";
 
 // Independently implemented adapter for radiohand's /api/qq/* contract.
 // Account authorization stays in the operator's existing radiohand service.
@@ -20,6 +21,7 @@ export interface RadiohandSong {
   qqId: string;
   name: string;
   artist: string;
+  album?: string;
   albumMid: string;
   cover: string;
   duration: number;
@@ -85,7 +87,7 @@ async function serviceJson(path: string, params: Record<string, string>, signal:
 }
 
 export async function radiohandStatus(signal: AbortSignal) {
-  if (!serviceOrigin()) return { configured: false, authorized: false, provider: "qq", message: "QQ 歌曲搜索可用；在线播放等待连接已授权的 radiohand 服务。" };
+  if (!serviceOrigin()) return { configured: true, authorized: false, provider: "qq", message: "QQ 歌曲搜索可用。用手机 QQ 扫码连接你的 QQ 音乐账号。" };
   try {
     const result = await serviceJson("/api/qq/login/status", {}, signal);
     const authorized = result.loggedIn === true && result.partial !== true && result.playbackKeyReady !== false;
@@ -103,23 +105,56 @@ function songRecord(value: unknown, fallback: unknown = {}): RadiohandSong | nul
   return {
     provider: "qq", mid, mediaMid: text(file.media_mid || item.mediaMid, 64), qqId: text(item.id || item.qqId || previous.qqId, 32),
     name: text(item.name || item.title || previous.name), artist: artists || text(item.artist || item.singer || previous.artist || previous.singer),
-    albumMid: midSchema.safeParse(albumMid).success ? albumMid : "",
+    albumMid: midSchema.safeParse(albumMid).success ? albumMid : "", album: text(album.name || item.albumName || previous.album),
     cover: midSchema.safeParse(albumMid).success ? "/api/qq/cover?mid=" + encodeURIComponent(albumMid) : "",
     duration: Number.isFinite(duration) ? Math.max(0, Math.min(duration, 24 * 60 * 60 * 1000)) : 0,
     fee: Number(record(item.pay).pay_play || item.fee || 0) > 0 ? 1 : 0,
   };
 }
 
-export async function radiohandSearch(keywords: string, limit: number, signal: AbortSignal) {
-  const query = z.string().trim().min(1).max(80).parse(keywords);
-  const count = Math.max(1, Math.min(20, Math.floor(limit) || 8));
+export async function radiohandSearchPage(keywords: string, limit: number, signal: AbortSignal, userId?: string, page = 1) {
+  const checked = z.string().trim().min(1).max(80).safeParse(keywords);
+  if (!checked.success) throw new RequestError(400, "请输入 1–80 个字符的歌曲名或歌手名。", "QQ_SEARCH_QUERY_INVALID");
+  const query = checked.data;
+  const count = Math.max(1, Math.min(30, Math.floor(limit) || 12));
+  const currentPage = Math.max(1, Math.min(100, Math.floor(page) || 1));
+  const offset = (currentPage - 1) * count;
+  const resultPage = (songs: RadiohandSong[], hasMore = songs.length >= count, source = "search") => ({ provider: "qq" as const, songs, query, page: currentPage, limit: count, hasMore, source });
   if (serviceOrigin()) {
     try {
-      const result = await serviceJson("/api/qq/search", { keywords: query, limit: String(count), offset: "0" }, signal);
-      return list(result.songs).slice(0, count).map((song) => songRecord(song)).filter((song): song is RadiohandSong => !!song?.name);
+      const result = await serviceJson("/api/qq/search", { keywords: query, limit: String(count), offset: String(offset) }, signal);
+      const songs = list(result.songs).slice(0, count).map((song) => songRecord(song)).filter((song): song is RadiohandSong => !!song?.name);
+      return resultPage(songs, result.hasMore === true, "bridge");
     } catch (error) { if (!(error instanceof RequestError) || error.code !== "MUSIC_UPSTREAM_UNAVAILABLE") throw error; }
   }
-  // The reference project's anonymous smartbox search works without account credentials.
+  // Request the full song search first. Smartbox is a limited suggestion fallback.
+  const account = userId ? qqAccountCredentials(userId) : null;
+  try {
+    const response = await fetch(musicEndpoint, {
+      method: "POST", headers: { ...qqHeaders, ...(account ? { Cookie: account.cookie } : {}) }, cache: "no-store", redirect: "error",
+      signal: AbortSignal.any([signal, AbortSignal.timeout(10000)]),
+      body: JSON.stringify({
+        comm: { ct: "11", cv: "14090508", v: "14090508", tmeAppID: "qqmusic", phonetype: "EBG-AN10", os_ver: "12", OpenUDID: "0", QIMEI36: "0", udid: "0", chid: "0", aid: "0", oaid: "0", taid: "0", tid: "0", wid: "0", uid: "0", sid: "0", modeSwitch: "6", teenMode: "0", ui_mode: "2", nettype: "1020", uin: account?.uin ?? "0" },
+        req: { module: "music.search.SearchCgiService", method: "DoSearchForQQMusicMobile", param: { search_type: 0, searchid: String(Date.now()) + randomBytes(3).toString("hex"), query, page_num: currentPage, num_per_page: count, highlight: 0, nqc_flag: 0, multi_zhida: 0, cat: 2, grp: 1, sin: offset, sem: 0 } },
+      }),
+    });
+    if (!response.ok) throw new Error("Search unavailable");
+    const result = record(JSON.parse(new TextDecoder().decode(await boundedBytes(response, 2 * 1024 * 1024))));
+    const block = record(result.req), data = record(block.data), body = record(data.body ?? data);
+    if (Number(result.code ?? 0) !== 0 || Number(block.code ?? 0) !== 0 || Number(data.code ?? 0) !== 0) throw new Error("Search unavailable");
+    const values = body.item_song ?? record(body.song).list ?? body.list;
+    if (!Array.isArray(values)) throw new Error("Search response unavailable");
+    const seen = new Set<string>();
+    const songs = values.map(value => { const item = record(value); return songRecord(item.track_info ?? item.songInfo ?? item.songinfo ?? item.song ?? item); }).filter((song): song is RadiohandSong => {
+      if (!song?.name || seen.has(song.mid)) return false;
+      seen.add(song.mid); return true;
+    }).slice(0, count);
+    return resultPage(songs);
+  } catch {
+    if (signal.aborted) throw signal.reason;
+    if (currentPage > 1) throw new RequestError(502, "暂时无法加载更多搜索结果，请重试。", "QQ_SEARCH_PAGE_UNAVAILABLE");
+  }
+  // Suggestions remain useful when the full search service is temporarily unavailable.
   const url = new URL("https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg");
   for (const [key, value] of Object.entries({ key: query, format: "json", platform: "yqq.json", inCharset: "utf8", outCharset: "utf-8" })) url.searchParams.set(key, value);
   const data = await readJson(url, signal);
@@ -133,7 +168,40 @@ export async function radiohandSearch(keywords: string, limit: number, signal: A
     } catch { return fallback; }
   }));
   const seen = new Set<string>();
-  return songs.filter((song): song is RadiohandSong => { if (!song?.name || seen.has(song.mid)) return false; seen.add(song.mid); return true; });
+  return resultPage(songs.filter((song): song is RadiohandSong => { if (!song?.name || seen.has(song.mid)) return false; seen.add(song.mid); return true; }), false, "suggestions");
+}
+
+export async function radiohandSearch(keywords: string, limit: number, signal: AbortSignal) {
+  return (await radiohandSearchPage(keywords, limit, signal)).songs;
+}
+
+/** Album metadata only; playback continues to use the existing account/rights adapter. */
+export async function radiohandAlbum(albumMid: string, trackMid: string, signal: AbortSignal) {
+  let mid = albumMid;
+  if (!mid) {
+    const detail = await readJson(musicEndpoint, signal, { comm: { ct: 24, cv: 0 }, songinfo: {
+      module: "music.pf_song_detail_svr", method: "get_song_detail_yqq", param: { song_mid: midSchema.parse(trackMid) },
+    } });
+    mid = text(record(record(record(record(detail.songinfo).data).track_info).album).mid, 64);
+  }
+  midSchema.parse(mid);
+  const response = await readJson(musicEndpoint, signal, { comm: { ct: 24, cv: 0 },
+    info: { module: "music.musichallAlbum.AlbumInfoServer", method: "GetAlbumDetail", param: { albumMid: mid } },
+    songs: { module: "music.musichallAlbum.AlbumSongList", method: "GetAlbumSongList", param: { albumMid: mid, albumID: 0, begin: 0, num: 300, order: 2 } },
+  });
+  const info = record(record(response.info).data), block = record(response.songs), data = record(block.data);
+  const meta = record(info.album ?? info);
+  const raw = list(data.songList ?? data.songlist ?? data.list);
+  if (Number(block.code) !== 0 || !raw.length) throw new RequestError(502, "QQ 音乐暂未返回专辑曲目。", "ALBUM_UNAVAILABLE");
+  const tracks = raw.map((value) => {
+    const item = record(value), song = record(item.songInfo ?? item.songinfo ?? item.song ?? item);
+    const track = songRecord(song);
+    return track ? { ...track, discNumber: Number(song.volume ?? song.disc) || 1, trackNumber: Number(song.index_album ?? song.trackNumber ?? song.belongCD) || 0 } : null;
+  }).filter((song) => song !== null);
+  const singers = list(meta.singer ?? info.singer);
+  return { id: mid, name: text(meta.name ?? meta.title) || tracks[0]?.album || "", artist: singers.map(a => text(record(a).name)).filter(Boolean).join(" / ") || tracks[0]?.artist || "",
+    cover: "/api/qq/cover?mid=" + encodeURIComponent(mid), year: Number(text(meta.aDate ?? meta.time_public ?? meta.publishDate).slice(0, 4)) || undefined,
+    total: Number(data.totalNum ?? data.total ?? meta.totalNum) || raw.length, tracks };
 }
 
 function allowedAudioUrl(value: unknown) {
@@ -158,6 +226,15 @@ export function limitPlayerRequests(userId: string) {
   rates.set(userId, entry);
 }
 
+export function issueAudioTicket(userId: string, url: string, quality: string, trial: boolean) {
+  const source = allowedAudioUrl(url);
+  const now = Date.now(), store = tickets();
+  for (const [key, item] of store) if (item.expires <= now || store.size >= 200) store.delete(key);
+  const ticket = randomBytes(32).toString("base64url");
+  store.set(ticket, { userId, url: source, expires: now + 30 * 60 * 1000 });
+  return { provider: "qq" as const, url: "/api/qq/audio?ticket=" + ticket, playable: true, trial, quality: quality || "标准音质" };
+}
+
 export async function radiohandSongUrl(userId: string, mid: string, mediaMid: string, signal: AbortSignal) {
   const songMid = midSchema.parse(mid);
   if (mediaMid) midSchema.parse(mediaMid);
@@ -165,12 +242,7 @@ export async function radiohandSongUrl(userId: string, mid: string, mediaMid: st
   if (!status.authorized) return { provider: "qq", url: "", playable: false, reason: "QQ_AUTH_REQUIRED", message: status.message };
   const result = await serviceJson("/api/qq/song/url", { mid: songMid, mediaMid, quality: "standard" }, signal);
   if (!result.url || result.playable === false) return { provider: "qq", url: "", playable: false, reason: "QQ_PLAYBACK_RESTRICTED", message: "这首歌暂时无法按当前账号权益播放，可在 QQ 音乐中查看。" };
-  const url = allowedAudioUrl(result.url);
-  const now = Date.now(), store = tickets();
-  for (const [key, item] of store) if (item.expires <= now || store.size >= 200) store.delete(key);
-  const ticket = randomBytes(32).toString("base64url");
-  store.set(ticket, { userId, url, expires: now + 30 * 60 * 1000 });
-  return { provider: "qq", url: "/api/qq/audio?ticket=" + ticket, playable: true, trial: result.trial === true, quality: text(result.quality, 40) || "标准音质" };
+  return issueAudioTicket(userId, text(result.url, 8192), text(result.quality, 40), result.trial === true);
 }
 
 export async function radiohandLyric(mid: string, signal: AbortSignal) {

@@ -43,7 +43,8 @@ test("document headers permit the app and block a script without a nonce", async
   await expect(page.locator(".mw-hall-ready")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.dataset.unauthorizedScript)).toBeUndefined();
   await expect.poll(() => page.evaluate(() => Reflect.get(window, "__blockedDirectives").includes("script-src-elem"))).toBe(true);
-  await page.locator('[data-portal="import"]').click();
+  await expect(page.getByRole("link", { name: "进入专辑宇宙" })).toBeVisible();
+  await page.goto("/#import");
   await expect(page).toHaveURL(/#import$/u);
   await expect(page.locator(".mw-fog-transition")).toHaveCount(0, { timeout: 20_000 });
   await expect(page.getByLabel("选择歌单文件")).toBeVisible();

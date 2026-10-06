@@ -1,0 +1,11 @@
+.player-volume { display:flex; align-items:center; gap:3px; padding-left:6px; border-left:1px solid #ffffff12; }
+.player-volume input { width:48px; height:3px; accent-color:#dfc69a; cursor:pointer; }
+.player-has-error .player-track span { color:#e5b190; }
+.player-source-action { grid-column:1/-1; justify-self:start; padding:4px 9px; border:1px solid #dfc69a40; border-radius:6px; color:#dfc69a; background:#dfc69a0c; font:inherit; font-size:10px; cursor:pointer; }
+@media(max-width:480px) { .player-volume input { display:none; } .player-cluster { gap:5px; } }
+.player-audio-status { position:absolute; left:50%; top:-17px; transform:translateX(-50%); margin:0; max-width:calc(100% - 180px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#a4937e; font-size:10px; }
+.player-audio-status.is-error { color:#e5b190; }
+.player-audio-volume { position:absolute; right:0; top:-26px; display:flex; align-items:center; gap:5px; }
+.player-audio-volume input { width:52px; height:3px; accent-color:#dfc69a; }
+.player-orbit ~ .player-source-action { position:absolute; left:0; top:-29px; }
+@media(max-width:480px) { .player-audio-volume input { display:none; } .player-audio-status { max-width:calc(100% - 76px); } }
