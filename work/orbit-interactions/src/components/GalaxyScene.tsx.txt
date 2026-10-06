@@ -1,0 +1,329 @@
+import { Component, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode, RefObject } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Environment, Lightformer, Line, PerformanceMonitor, useTexture } from '@react-three/drei'
+import { Bloom, EffectComposer } from '@react-three/postprocessing'
+import { AdditiveBlending, CatmullRomCurve3, CanvasTexture, Group, MathUtils, Mesh, SRGBColorSpace, Vector3 } from 'three'
+import { ALBUM_TARGET } from '../lib/galaxyNavigation'
+import type { GalaxyNavigation } from '../hooks/useGalaxyNavigation'
+import { CameraDirector, PlaybackHalo, SceneDiagnostics, useSurfaceGesture } from './SceneInteraction'
+import ImmersiveBackground from './ImmersiveBackground'
+import { getGalaxyFraming } from '../lib/sceneFraming'
+import type { RenderQuality } from '../lib/sceneFraming'
+import { MUSIC_HALL_URL } from '../lib/musicWorld'
+import { GALAXY_TEMPLATE } from '../lib/generateAlbumGalaxy'
+import type { Album, AlbumGalaxy, GalaxyPlanet } from '../lib/generateAlbumGalaxy'
+import { createAlbumSurface, createAtmosphere, createPlanetMaterial, createRadialTexture } from '../lib/spaceMaterials'
+
+interface SceneProps {
+  galaxy: AlbumGalaxy
+  album: Album
+  selectedId: string | null
+  onSelect: (id: string | null) => void
+  playing: boolean
+  showLabels: boolean
+  resetKey: number
+  generation: number
+  quality: RenderQuality
+  navigation: GalaxyNavigation
+  onToggleTarget: (target: string) => void
+  pulseTarget: string | null
+  toolsVisible: boolean
+}
+
+type TimeRef = RefObject<number>
+
+function SimulationClock({ playing, time }: { playing: boolean; time: TimeRef }) {
+  useFrame((_, delta) => { if (playing) time.current += Math.min(delta, 0.06) }, -1)
+  return null
+}
+
+function RenderQualityController({ quality, playing }: { quality: RenderQuality; playing: boolean }) {
+  const { gl, setDpr, invalidate, size } = useThree()
+  const ceiling = Math.min(window.devicePixelRatio || 1, size.width < 700 ? 1.2 : 1.75)
+  const applyFactor = useCallback((factor: number) => {
+    const dpr = Math.min(ceiling, 0.65 + factor * 1.1)
+    setDpr(dpr)
+    gl.domElement.dataset.renderDpr = dpr.toFixed(2)
+    invalidate()
+  }, [ceiling, gl, setDpr, invalidate])
+  useEffect(() => {
+    const factor = quality === 'low' ? 0.15 : quality === 'high' ? 1 : 0.6
+    applyFactor(factor)
+  }, [quality, applyFactor])
+  return quality === 'auto' && playing ? <PerformanceMonitor ms={350} iterations={6} threshold={0.65} step={0.15} factor={0.6}
+    bounds={() => [30, 55]} flipflops={3} onChange={({ factor }) => applyFactor(factor)} onFallback={() => applyFactor(0.2)} /> : null
+}
+
+type WorldRef = RefObject<Group | null>
+
+function WorldMotion({ world, time, playing, planetCount, navigation, children }: { world: WorldRef; time: TimeRef; playing: boolean; planetCount: number; navigation: GalaxyNavigation; children: ReactNode }) {
+  const { pointer } = useThree()
+  useFrame((_, delta) => {
+    if (!playing || !world.current || navigation.viewRef.current.mode === 'focus') return
+    const limit = planetCount > 20 ? 0.3 : 1
+    const x = (0.018 + pointer.y * 0.012 + Math.sin(time.current * 0.15) * 0.006) * limit
+    const y = (-0.025 + pointer.x * 0.035) * limit
+    world.current.rotation.x = MathUtils.damp(world.current.rotation.x, x, 3, Math.min(delta, 0.06))
+    world.current.rotation.y = MathUtils.damp(world.current.rotation.y, y, 3, Math.min(delta, 0.06))
+  }, -0.75)
+  return <group ref={world} name="album-solar-system" rotation={[0.018, -0.025, 0]}>{children}</group>
+}
+
+function AlbumStar({ galaxy, time, navigation, onToggleTarget, pulseTarget, playing, toolsVisible }: SceneProps & { time: TimeRef }) {
+  const cover = useTexture(galaxy.star.albumCover)
+  const sphere = useRef<Mesh>(null)
+  const gesture = useSurfaceGesture({ target: ALBUM_TARGET, navigation, onInspect: () => navigation.focus(ALBUM_TARGET), onToggle: onToggleTarget, inspectOnClick: toolsVisible })
+  const surface = useMemo(() => {
+    cover.colorSpace = SRGBColorSpace
+    return createAlbumSurface(cover)
+  }, [cover])
+  const atmosphere = useMemo(() => createAtmosphere('#edbe72', 0.64), [])
+  const glow = useMemo(() => new CanvasTexture(createRadialTexture()), [])
+  useEffect(() => () => { surface.dispose(); atmosphere.dispose(); glow.dispose() }, [surface, atmosphere, glow])
+  useFrame(() => {
+    // A gentle axial drift keeps the full cover continuously legible.
+    if (sphere.current) { sphere.current.rotation.y = Math.sin(time.current * galaxy.star.rotationSpeed) * 0.028 + gesture.rotation.current.yaw; sphere.current.rotation.x = gesture.rotation.current.pitch }
+  })
+  const radius = galaxy.star.scale
+  return <group position={galaxy.star.position} name="album-star">
+    <sprite position={[0, 0, -0.6]} scale={[radius * 4.7, radius * 4.7, 1]}>
+      <spriteMaterial map={glow} color="#e6a75c" transparent opacity={0.38} blending={AdditiveBlending} depthWrite={false} />
+    </sprite>
+    <mesh ref={sphere} scale={radius} material={surface} name="album-cover-surface" {...gesture.handlers}
+      onPointerOver={(event) => { event.stopPropagation(); document.body.style.cursor = navigation.viewRef.current.mode === 'focus' ? 'grab' : 'pointer' }}
+      onPointerOut={() => { if (document.body.style.cursor !== 'grabbing') document.body.style.cursor = '' }}><sphereGeometry args={[1, 96, 64]} /></mesh>
+    {pulseTarget === ALBUM_TARGET && <PlaybackHalo radius={radius} time={time} playing={playing} />}
+    <mesh scale={radius * 1.025} material={atmosphere}><sphereGeometry args={[1, 64, 48]} /></mesh>
+    <mesh rotation={[0.15, -0.22, -0.28]} scale={[1, 0.34, 1]}>
+      <torusGeometry args={[radius * 1.23, 0.008, 8, 160]} />
+      <meshBasicMaterial color="#e7c58a" transparent opacity={0.48} />
+    </mesh>
+    <mesh rotation={[0.12, 0, -0.28]} scale={[1, 0.34, 1]} position={[0, 0, -1]}>
+      <torusGeometry args={[radius * 1.42, 0.006, 8, 160]} />
+      <meshBasicMaterial color="#aa8152" transparent opacity={0.27} />
+    </mesh>
+  </group>
+}
+
+function Moons({ planet, time }: { planet: GalaxyPlanet; time: TimeRef }) {
+  const group = useRef<Group>(null)
+  useFrame(() => { if (group.current) group.current.rotation.z = planet.phase + time.current * planet.rotationSpeed * 0.6 })
+  return <group ref={group} rotation={[0.2, 0.3, planet.phase]}>
+    {Array.from({ length: planet.moonCount }, (_, i) => {
+      const angle = i * 2.399 + planet.phase
+      return <mesh key={i} position={[Math.cos(angle) * 1.72, Math.sin(angle) * 1.72, -0.1]} scale={0.075 + i * 0.018}>
+        <sphereGeometry args={[1, 12, 8]} /><meshStandardMaterial color="#9eabb9" roughness={0.95} />
+      </mesh>
+    })}
+  </group>
+}
+
+function Planet({ planet, selected, onSelect, time, navigation, onToggleTarget, pulseTarget, playing, toolsVisible }: { planet: GalaxyPlanet; selected: boolean; onSelect: () => void; time: TimeRef; navigation: GalaxyNavigation; onToggleTarget: (target: string) => void; pulseTarget: string | null; playing: boolean; toolsVisible: boolean }) {
+  const sphere = useRef<Mesh>(null)
+  const [hovered, setHovered] = useState(false)
+  const gesture = useSurfaceGesture({ target: planet.id, navigation, onInspect: onSelect, onToggle: onToggleTarget, inspectOnClick: toolsVisible })
+  const surface = useMemo(() => createPlanetMaterial(planet), [planet])
+  const atmosphere = useMemo(() => createAtmosphere(planet.color, planet.style === 'glass' ? 0.7 : 0.32), [planet])
+  useEffect(() => () => { surface.dispose(); atmosphere.dispose() }, [surface, atmosphere])
+  useFrame(() => {
+    if (sphere.current) { sphere.current.rotation.y = time.current * planet.rotationSpeed + planet.phase + gesture.rotation.current.yaw; sphere.current.rotation.x = gesture.rotation.current.pitch; sphere.current.rotation.z = 0.14 }
+  })
+  return <group position={planet.position} name={`track-${planet.index + 1}`}>
+    <group scale={planet.scale}>
+      <mesh ref={sphere} material={surface} {...gesture.handlers}
+        onPointerOver={(event) => { event.stopPropagation(); setHovered(true); document.body.style.cursor = navigation.viewRef.current.mode === 'focus' ? 'grab' : 'pointer' }}
+        onPointerOut={() => { setHovered(false); if (document.body.style.cursor !== 'grabbing') document.body.style.cursor = '' }}>
+        {planet.style === 'crystal' ? <icosahedronGeometry args={[1, 2]} /> : <sphereGeometry args={[1, 48, 32]} />}
+      </mesh>
+      <mesh scale={1.045} material={atmosphere}><sphereGeometry args={[1, 32, 24]} /></mesh>
+      {planet.hasRing && <group rotation={[1.12, 0.12, planet.ringTilt]}>
+        <mesh><torusGeometry args={[1.37, 0.055, 8, 96]} /><meshStandardMaterial color={planet.color} metalness={0.65} roughness={0.45} transparent opacity={0.76} /></mesh>
+        <mesh><torusGeometry args={[1.54, 0.018, 6, 96]} /><meshBasicMaterial color={planet.color} transparent opacity={0.5} /></mesh>
+      </group>}
+      <Moons planet={planet} time={time} />
+      {pulseTarget === planet.id && <PlaybackHalo radius={1} time={time} playing={playing} />}
+      {(selected || hovered) && <mesh><torusGeometry args={[1.92, 0.012, 6, 80]} /><meshBasicMaterial color="#e4c898" transparent opacity={0.9} /></mesh>}
+    </group>
+  </group>
+}
+
+function RobotShip({ curve, time }: { curve: CatmullRomCurve3; time: TimeRef }) {
+  const ship = useRef<Group>(null)
+  const flame = useRef<Mesh>(null)
+  useFrame(() => {
+    const progress = (0.12 + time.current * 0.018) % 1
+    if (ship.current) {
+      ship.current.position.copy(curve.getPointAt(progress))
+      const direction = curve.getTangentAt(progress)
+      ship.current.rotation.z = Math.atan2(direction.y, direction.x)
+    }
+    if (flame.current) flame.current.scale.y = 0.7 + Math.sin(time.current * 19) * 0.15
+  })
+  return <group ref={ship} scale={0.95} name="robot-spaceship">
+    <mesh scale={[0.64, 0.16, 0.34]}><sphereGeometry args={[1, 32, 16]} /><meshStandardMaterial color="#eadcc7" metalness={0.5} roughness={0.28} /></mesh>
+    <mesh position={[0.44, 0.025, 0]} rotation={[0, 0, -Math.PI / 2]}><coneGeometry args={[0.12, 0.3, 20]} /><meshStandardMaterial color="#d4be91" metalness={0.7} roughness={0.25} /></mesh>
+    <mesh position={[-0.18, -0.12, -0.24]} rotation={[0.1, 0, -0.3]}><boxGeometry args={[0.65, 0.06, 0.28]} /><meshStandardMaterial color="#7c8ba2" metalness={0.8} roughness={0.35} /></mesh>
+    <mesh position={[-0.18, -0.12, 0.24]} rotation={[-0.1, 0, -0.3]}><boxGeometry args={[0.65, 0.06, 0.28]} /><meshStandardMaterial color="#7c8ba2" metalness={0.8} roughness={0.35} /></mesh>
+    {/* The same cream-and-orange, smiling companion from the Music World hall. */}
+    <group position={[-0.03, 0.14, 0.09]} scale={1.35} name="music-world-companion">
+      <mesh scale={[0.13, 0.15, 0.1]}><sphereGeometry args={[1, 24, 16]} /><meshStandardMaterial color="#fff0d6" metalness={0.18} roughness={0.4} /></mesh>
+      <mesh position={[0, 0.16, 0]} scale={[0.2, 0.18, 0.14]}><sphereGeometry args={[1, 32, 24]} /><meshStandardMaterial color="#fff0d6" metalness={0.2} roughness={0.35} /></mesh>
+      <mesh position={[0, 0.145, 0.088]} scale={[0.167, 0.115, 0.075]}><sphereGeometry args={[1, 32, 20]} /><meshStandardMaterial color="#10151a" metalness={0.55} roughness={0.18} /></mesh>
+      {[-0.069, 0.069].map((x) => <mesh key={x} position={[x, 0.13, 0.16]}><torusGeometry args={[0.031, 0.009, 8, 18, Math.PI]} /><meshBasicMaterial color={[2.5, 1.4, 0.32]} toneMapped={false} /></mesh>)}
+      {[-1, 1].flatMap((side) => [0, 1, 2].map((i) => <mesh key={side + ':' + i} position={[side * (0.103 + i * 0.013), 0.102, 0.151]} rotation={[0, 0, -0.3]}><capsuleGeometry args={[0.003, 0.012, 2, 6]} /><meshBasicMaterial color={[1.7, 0.16, 0.07]} toneMapped={false} /></mesh>))}
+      {[-0.19, 0.19].map((x) => <mesh key={x} position={[x, 0.15, 0]} rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[0.065, 0.065, 0.045, 20]} /><meshStandardMaterial color="#dd8e38" metalness={0.3} roughness={0.35} /></mesh>)}
+      <mesh position={[0.025, 0.298, 0]} scale={[0.105, 0.021, 0.09]}><sphereGeometry args={[1, 20, 12]} /><meshStandardMaterial color="#e9943d" roughness={0.4} /></mesh>
+      <mesh position={[0.033, 0.37, 0]} rotation={[0, 0, -0.2]}><cylinderGeometry args={[0.011, 0.014, 0.12, 10]} /><meshStandardMaterial color="#333035" metalness={0.6} /></mesh>
+      <mesh position={[0.045, 0.44, 0]}><sphereGeometry args={[0.043, 16, 12]} /><meshBasicMaterial color={[2.2, 1.3, 0.32]} toneMapped={false} /></mesh>
+      <mesh position={[0, 0.015, 0.1]} rotation={[0, 0, -0.55]}><boxGeometry args={[0.26, 0.028, 0.014]} /><meshStandardMaterial color="#805334" roughness={0.7} /></mesh>
+    </group>
+    <mesh position={[-0.59, 0, 0]} rotation={[0, 0, Math.PI / 2]}><cylinderGeometry args={[0.08, 0.09, 0.16, 12]} /><meshStandardMaterial color="#404d60" metalness={0.9} roughness={0.3} /></mesh>
+    <mesh ref={flame} position={[-0.86, 0, 0]} rotation={[0, 0, Math.PI / 2]}><coneGeometry args={[0.067, 0.42, 16]} /><meshBasicMaterial color={[1.1, 2.6, 3.1]} transparent opacity={0.82} toneMapped={false} /></mesh>
+    <mesh position={[-1, 0, 0]} rotation={[0, 0, Math.PI / 2]}><coneGeometry args={[0.075, 0.8, 16]} /><meshBasicMaterial color="#65b8da" transparent opacity={0.13} depthWrite={false} /></mesh>
+  </group>
+}
+
+function HallGate() {
+  return <group position={[-13.65, -5.1, 0]} name="music-hall-gate">
+    <mesh><torusGeometry args={[0.64, 0.025, 10, 72]} /><meshBasicMaterial color={[1.55, 1.05, 0.45]} toneMapped={false} /></mesh>
+    <mesh rotation={[0, 0, 0.4]}><torusGeometry args={[0.78, 0.011, 8, 72, Math.PI * 1.6]} /><meshBasicMaterial color="#edc389" transparent opacity={0.65} /></mesh>
+    <mesh position={[0, 0, -0.05]}><circleGeometry args={[0.61, 48]} /><meshBasicMaterial color="#d9a14e" transparent opacity={0.07} depthWrite={false} /></mesh>
+    <mesh position={[0, 0.81, 0]}><sphereGeometry args={[0.035, 12, 8]} /><meshBasicMaterial color={[2.1, 1.3, 0.4]} toneMapped={false} /></mesh>
+  </group>
+}
+
+function FlightPath({ galaxy, time }: { galaxy: AlbumGalaxy; time: TimeRef }) {
+  const curve = useMemo(() => new CatmullRomCurve3(galaxy.robotPath.map((point) => new Vector3(...point)), true, 'centripetal', 0.5), [galaxy.robotPath])
+  const points = useMemo(() => curve.getPoints(300), [curve])
+  return <group>
+    <Line points={points} color="#dec190" lineWidth={1.1} transparent opacity={0.66} />
+    <Line points={points} color="#b79155" lineWidth={6} transparent opacity={0.055} />
+    <RobotShip curve={curve} time={time} />
+  </group>
+}
+
+type LabelRefs = RefObject<Map<string, HTMLDivElement>>
+
+function ProjectLabels({ galaxy, labels, world }: { galaxy: AlbumGalaxy; labels: LabelRefs; world: WorldRef }) {
+  const { camera, size } = useThree()
+  const nodes = useMemo(() => [
+    { key: 'star', position: new Vector3(galaxy.star.position[0], galaxy.star.position[1] - galaxy.star.scale - 0.85, 0) },
+    { key: 'flight', position: new Vector3(-9.5, -5.5, 0) },
+    { key: 'hall-gate', position: new Vector3(-13.65, -6.3, 0) },
+    ...galaxy.planets.flatMap((planet) => [
+      { key: `${planet.id}-number`, position: new Vector3(planet.position[0], planet.position[1] + planet.scale + 0.65, planet.position[2]), center: new Vector3(...planet.position) },
+      { key: `${planet.id}-title`, position: new Vector3(planet.position[0], planet.position[1] - planet.scale - 0.7, planet.position[2]) },
+    ]),
+  ], [galaxy])
+  const projected = useMemo(() => new Vector3(), [])
+  useFrame(() => {
+    world.current?.updateMatrixWorld(true)
+    for (const node of nodes) {
+      const element = labels.current.get(node.key)
+      if (!element) continue
+      projected.copy(node.position)
+      world.current?.localToWorld(projected)
+      projected.project(camera)
+      const x = (projected.x * 0.5 + 0.5) * size.width
+      const y = (-projected.y * 0.5 + 0.5) * size.height
+      element.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`
+      if ('center' in node && node.center) {
+        projected.copy(node.center)
+        world.current?.localToWorld(projected)
+        projected.project(camera)
+        element.dataset.centerX = String((projected.x * 0.5 + 0.5) * size.width)
+        element.dataset.centerY = String((-projected.y * 0.5 + 0.5) * size.height)
+      }
+      if (node.key.endsWith('-title')) {
+        const slotWidth = size.width * (GALAXY_TEMPLATE.trackEndX - GALAXY_TEMPLATE.trackStartX) / Math.max(1, galaxy.planets.length - 1) / getGalaxyFraming(size.width, size.height, galaxy.planets.length).viewWidth
+        element.style.width = `${Math.max(16, Math.min(size.width > 1100 ? 84 : size.width > 700 ? 67 : 45, slotWidth - 8))}px`
+      }
+    }
+  })
+  return null
+}
+
+function SceneLabels({ galaxy, album, selectedId, onSelect, labels, navigation }: SceneProps & { labels: LabelRefs }) {
+  const labelRef = (key: string) => (element: HTMLDivElement | null) => {
+    if (element) labels.current.set(key, element)
+    else labels.current.delete(key)
+  }
+  const overview = navigation.view.mode === 'overview'
+  const visiblePlanets = overview ? galaxy.planets : galaxy.planets.filter((planet) => planet.id === navigation.view.target)
+  return <div className={`scene-label-layer ${overview ? '' : 'focus-label-layer'}`}>
+    {(overview || navigation.view.target === ALBUM_TARGET) && <div ref={labelRef('star')} className="star-caption"><div><span className="star-kind">ALBUM STAR</span><strong>{album.name}</strong><span>{album.artist}</span></div></div>}
+    {overview && <div ref={labelRef('flight')} className="flight-caption"><span>HALL VOYAGER <i /> 来自音乐大厅的旅伴</span></div>}
+    {overview && <div ref={labelRef('hall-gate')} className="hall-gate-caption"><a href={MUSIC_HALL_URL} aria-label="通过光环返回音乐大厅">音乐大厅 ↗</a></div>}
+    {visiblePlanets.map((planet) => <div key={planet.id} className="label-pair">
+      <div ref={labelRef(`${planet.id}-number`)} className="planet-number"><span className={selectedId === planet.id ? 'active' : ''}>{String(planet.index + 1).padStart(2, '0')}</span></div>
+      {galaxy.planets.length <= 20 && <div ref={labelRef(`${planet.id}-title`)} className="planet-caption"><button className={selectedId === planet.id ? 'active' : ''} onClick={() => onSelect(planet.id)} data-scene-target={planet.id} title={planet.title} aria-label={`选择第 ${planet.index + 1} 首：${planet.title}`}>{planet.title}</button></div>}
+    </div>)}
+  </div>
+}
+
+function Contents(props: SceneProps & { onReady: () => void; labels: LabelRefs }) {
+  const { galaxy, selectedId, onSelect, playing, quality, navigation, onToggleTarget, pulseTarget, toolsVisible, onReady, labels } = props
+  const time = useRef(0)
+  const world = useRef<Group>(null)
+  const browsing = navigation.view.mode === 'overview' || navigation.view.transitioning
+  return <>
+    <SimulationClock playing={playing} time={time} />
+    <RenderQualityController quality={quality} playing={playing} />
+    <ambientLight intensity={0.45} color="#9caed1" />
+    <directionalLight position={[-8, 8, 10]} intensity={2.4} color="#ffe3b0" />
+    <directionalLight position={[8, -3, 5]} intensity={1.1} color="#7b9bcf" />
+    <Environment resolution={128} frames={1} environmentIntensity={0.45}>
+      <Lightformer form="rect" intensity={2.5} color="#ffe1b1" position={[-8, 6, 8]} scale={[12, 5, 1]} />
+      <Lightformer form="rect" intensity={1.8} color="#8caee9" position={[8, 3, -6]} rotation={[0, Math.PI, 0]} scale={[10, 10, 1]} />
+      <Lightformer form="ring" intensity={0.6} color="#eec48c" position={[0, -6, 6]} scale={8} />
+    </Environment>
+    <ImmersiveBackground seed={galaxy.backgroundSeed} time={time} />
+    <WorldMotion world={world} time={time} playing={playing} planetCount={galaxy.planets.length} navigation={navigation}>
+      <group visible={browsing || navigation.view.target === ALBUM_TARGET}><AlbumStar {...props} time={time} /></group>
+      {galaxy.planets.map((planet) => <group key={planet.id} visible={browsing || navigation.view.target === planet.id}>
+        <Planet planet={planet} selected={selectedId === planet.id} onSelect={() => onSelect(planet.id)} time={time} navigation={navigation} onToggleTarget={onToggleTarget} pulseTarget={pulseTarget} playing={playing} toolsVisible={toolsVisible} />
+      </group>)}
+      <group visible={browsing}><HallGate /><FlightPath galaxy={galaxy} time={time} /></group>
+    </WorldMotion>
+    <CameraDirector galaxy={galaxy} navigation={navigation} world={world} onReady={onReady} />
+    <ProjectLabels galaxy={galaxy} labels={labels} world={world} />
+    <SceneDiagnostics galaxy={galaxy} world={world} playing={playing} toolsVisible={toolsVisible} />
+    <EffectComposer multisampling={0}><Bloom luminanceThreshold={1.2} intensity={0.55} mipmapBlur /></EffectComposer>
+  </>
+}
+
+class SceneBoundary extends Component<{ children: ReactNode; album: Album; generation: number }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() { return { failed: true } }
+  componentDidUpdate(previous: { generation: number }) {
+    if (this.state.failed && previous.generation !== this.props.generation) this.setState({ failed: false })
+  }
+  render() {
+    if (this.state.failed) return <div className="scene-fallback"><img src={this.props.album.cover} alt={this.props.album.name} /><p>3D 场景暂时无法显示</p><span>请开启浏览器硬件加速后刷新，专辑编辑仍可使用。</span></div>
+    return this.props.children
+  }
+}
+
+export default function GalaxyScene(props: SceneProps) {
+  const [visible, setVisible] = useState(() => !document.hidden)
+  useEffect(() => {
+    const updateVisibility = () => setVisible(!document.hidden)
+    document.addEventListener('visibilitychange', updateVisibility)
+    return () => document.removeEventListener('visibilitychange', updateVisibility)
+  }, [])
+  const moving = props.playing && visible
+  const [readyGeneration, setReadyGeneration] = useState(-1)
+  const markReady = useCallback(() => setReadyGeneration(props.generation), [props.generation])
+  const labels = useRef(new Map<string, HTMLDivElement>())
+  return <SceneBoundary album={props.album} generation={props.generation}>
+    {readyGeneration !== props.generation && <div className="scene-loading" role="status"><span className="loading-orbit" /> 正在点亮你的宇宙…</div>}
+    <Canvas key="orbit-direct-interaction-v3" frameloop={moving ? 'always' : 'demand'} camera={{ position: [0, -0.65, 34], fov: 36, near: 0.1, far: 400 }}
+      dpr={[1, 1.5]} gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+      onCreated={({ gl }) => { gl.domElement.tabIndex = 0; gl.domElement.setAttribute('aria-label', '音乐星系，滚轮缩放，拖动星球，双击控制动画') }}
+      fallback={<div className="scene-fallback"><img src={props.album.cover} alt={props.album.name} /><p>此浏览器不支持 WebGL，请使用支持 3D 的浏览器。</p></div>}>
+      <Suspense fallback={null}><Contents key={props.generation} {...props} playing={moving} onReady={markReady} labels={labels} /></Suspense>
+    </Canvas>
+    {props.showLabels && <SceneLabels {...props} labels={labels} />}
+  </SceneBoundary>
+}

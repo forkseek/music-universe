@@ -1,0 +1,3 @@
+- main "全屏专辑宇宙":
+  - paragraph: Atom Heart Mother。双击星球播放或暂停，滚轮靠近或拉远，空格播放或暂停，Escape 返回音乐大厅。
+  - paragraph: 把远方，放在耳边

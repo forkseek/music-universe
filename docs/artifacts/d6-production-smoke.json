@@ -1,0 +1,9 @@
+{
+  "origin": "http://127.0.0.1:3000",
+  "health": "ok",
+  "demoTracks": 60,
+  "journeyStops": 5,
+  "journeySurvivedRefresh": true,
+  "ownWorldAndJourneyDeleted": true,
+  "isolatedBrowserContext": true
+}

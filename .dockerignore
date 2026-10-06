@@ -1,0 +1,16 @@
+node_modules
+.next
+.next-test
+.git
+.env*
+!.env.example
+data
+*.db
+*.db-shm
+*.db-wal
+*.log
+*.tsbuildinfo
+test-results
+playwright-report
+coverage
+docs/artifacts

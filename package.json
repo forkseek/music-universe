@@ -1,0 +1,62 @@
+{
+  "name": "music-world",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Music World — persistent libraries and explainable music graphs",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "node --env-file-if-exists=.env.local scripts/start.mjs",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:restart": "node scripts/test-restart.mjs",
+    "smoke:local": "node scripts/smoke-local-demo.mjs",
+    "db:init": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db-init.ts",
+    "storage:check": "node --env-file-if-exists=.env.local scripts/storage-check.mjs",
+    "db:generate": "drizzle-kit generate",
+    "licenses:generate": "node scripts/generate-licenses.mjs",
+    "demo:record": "node scripts/record-local-demo.mjs",
+    "check": "npm run lint && npm run typecheck && npm test"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    }
+  },
+  "dependencies": {
+    "@xyflow/react": "12.12.0",
+    "better-sqlite3": "13.0.3",
+    "csv-parse": "7.0.3",
+    "d3-force": "3.0.0",
+    "drizzle-orm": "0.45.3",
+    "motion": "14.0.0",
+    "next": "16.3.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "server-only": "0.0.1",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/d3-force": "3.0.10",
+    "@types/node": "24.19.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "drizzle-kit": "0.31.11",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.8",
+    "tailwindcss": "4.3.3",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "vitest": "5.0.3"
+  }
+}

@@ -1,0 +1,105 @@
+/** Surface gestures never rotate or reorder the solar-system layout. */
+export function useSurfaceGesture({ target, navigation, onInspect, onToggle, inspectOnClick, inertial = false, playing = false, autoSpeed = 0 }: { target: string; navigation: GalaxyNavigation; onInspect: () => void; onToggle: (target: string) => void; inspectOnClick: boolean; inertial?: boolean; playing?: boolean; autoSpeed?: number }) {
+  const { invalidate, gl } = useThree()
+  const rotation = useRef({ yaw: 0, pitch: 0 })
+  const body = useMemo(() => inertial ? createAngularBody() : null, [inertial])
+  const reduced = useMemo(() => matchMedia('(prefers-reduced-motion: reduce)').matches, [])
+  const gesture = useRef({ pressed: false, dragging: false, moved: false, x: 0, y: 0, lastX: 0, lastY: 0, lastMoveAt: 0, tapAt: 0, tapX: 0, tapY: 0, handledAt: -1000, pointer: -1 })
+  type CaptureTarget = { setPointerCapture: (id: number) => void; releasePointerCapture: (id: number) => void }
+  const captured = useRef<CaptureTarget | null>(null)
+  const releaseCapture = () => {
+    if (captured.current) { try { captured.current.releasePointerCapture(gesture.current.pointer) } catch { /* Cancellation may already have released capture. */ } }
+    captured.current = null
+  }
+  const clear = (redraw = true) => {
+    releaseCapture()
+    gesture.current.pressed = false; gesture.current.dragging = false; gesture.current.moved = true; gesture.current.tapAt = 0
+    if (body) stopAngularBody(body)
+    document.body.style.cursor = ''
+    if (redraw) invalidate()
+  }
+  useEffect(() => {
+    const reset = () => clear()
+    window.addEventListener('pointercancel', reset)
+    window.addEventListener('blur', reset)
+    return () => { window.removeEventListener('pointercancel', reset); window.removeEventListener('blur', reset); clear(false) }
+  }, [body])
+  useEffect(() => { if (body && (!playing || reduced)) { stopAngularBody(body); invalidate() } }, [body, playing, reduced, invalidate])
+  useFrame((_, delta) => {
+    if (!body) return
+    if (navigation.pinching.current) { stopAngularBody(body); gesture.current.moved = true; gesture.current.tapAt = 0 }
+    const moving = advanceAngularBody(body, Math.min(delta, 0.08), { active: playing, dragging: gesture.current.dragging, reducedMotion: reduced, autoSpeed })
+    rotation.current.yaw = body.angles.yaw; rotation.current.pitch = body.angles.pitch
+    gl.domElement.dataset.starYaw = body.angles.yaw.toFixed(6)
+    gl.domElement.dataset.starPitch = body.angles.pitch.toFixed(6)
+    gl.domElement.dataset.starAngularSpeed = body.velocity.length().toFixed(6)
+    gl.domElement.dataset.starDragging = String(gesture.current.dragging)
+    gl.domElement.dataset.starSpinning = String(moving)
+    gl.domElement.dataset.starQuaternion = JSON.stringify(body.orientation.toArray())
+    gl.domElement.dataset.starArtworkMapping = 'paired-hemispheres'
+    if (moving) invalidate()
+  }, -0.1)
+  const handlers = {
+    onPointerDown: (event: ThreeEvent<PointerEvent>) => {
+      event.stopPropagation()
+      const state = gesture.current
+      if (state.pressed && state.pointer !== event.pointerId) { state.moved = true; state.tapAt = 0; if (body) stopAngularBody(body); return }
+      if (body) stopAngularBody(body)
+      state.pressed = true; state.moved = false; state.x = state.lastX = event.clientX; state.y = state.lastY = event.clientY; state.pointer = event.pointerId; state.lastMoveAt = performance.now()
+      state.tapAt = navigation.pinching.current ? 0 : state.tapAt
+      state.dragging = true
+      captured.current = event.target as unknown as CaptureTarget
+      captured.current.setPointerCapture(event.pointerId)
+      document.body.style.cursor = 'grabbing'
+      invalidate()
+    },
+    onPointerMove: (event: ThreeEvent<PointerEvent>) => {
+      const state = gesture.current
+      if (!state.pressed || state.pointer !== event.pointerId) return
+      const now = performance.now()
+      if (navigation.pinching.current) {
+        state.moved = true; state.tapAt = 0; state.lastX = event.clientX; state.lastY = event.clientY; state.lastMoveAt = now
+        if (body) stopAngularBody(body)
+        return
+      }
+      if (Math.hypot(event.clientX - state.x, event.clientY - state.y) > 7) state.moved = true
+      if (!state.dragging) return
+      event.stopPropagation()
+      if (body) {
+        dragAngularBody(body, (event.clientX - state.lastX) * 0.008, (event.clientY - state.lastY) * 0.006, (now - state.lastMoveAt) / 1000)
+        rotation.current.yaw = body.angles.yaw; rotation.current.pitch = body.angles.pitch
+      } else {
+        rotation.current.yaw = MathUtils.clamp(rotation.current.yaw + (event.clientX - state.lastX) * 0.004, -0.75, 0.75)
+        rotation.current.pitch = MathUtils.clamp(rotation.current.pitch + (event.clientY - state.lastY) * 0.002, -0.2, 0.2)
+      }
+      state.lastX = event.clientX; state.lastY = event.clientY; state.lastMoveAt = now
+      gl.domElement.dataset.surfaceYaw = rotation.current.yaw.toFixed(4)
+      gl.domElement.dataset.surfacePitch = rotation.current.pitch.toFixed(4)
+      invalidate()
+    },
+    onPointerUp: (event: ThreeEvent<PointerEvent>) => {
+      const state = gesture.current
+      if (state.pointer !== event.pointerId) return
+      releaseCapture()
+      if (body) releaseAngularBody(body, (performance.now() - state.lastMoveAt) / 1000, state.moved && playing && !reduced && !navigation.pinching.current)
+      state.dragging = false; document.body.style.cursor = ''
+      invalidate()
+      if (!state.pressed) return
+      state.pressed = false
+      if (state.moved) { state.tapAt = 0; return }
+      if (event.pointerType === 'mouse') return
+      event.stopPropagation()
+      const now = performance.now()
+      if (state.tapAt > 0 && now - state.tapAt < 380 && Math.hypot(event.clientX - state.tapX, event.clientY - state.tapY) < 24) {
+        state.tapAt = 0; state.handledAt = now; onToggle(target)
+      } else { state.tapAt = now; state.tapX = event.clientX; state.tapY = event.clientY }
+    },
+    onPointerCancel: () => clear(),
+    onClick: (event: ThreeEvent<MouseEvent>) => { event.stopPropagation(); if (!gesture.current.moved && inspectOnClick) onInspect() },
+    onDoubleClick: (event: ThreeEvent<MouseEvent>) => {
+      event.stopPropagation()
+      if (!gesture.current.moved && performance.now() - gesture.current.handledAt > 700) onToggle(target)
+    },
+  }
+  return { rotation, handlers, orientation: body?.orientation }
+}

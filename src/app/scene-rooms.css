@@ -1,0 +1,18 @@
+/* The hall and album universe share an ivory guide, warm orbit marks and room numbers. */
+.mw-universe-portal { position: absolute; z-index: 4; left: 56%; bottom: 15%; transform: translateX(-50%); display: flex; align-items: center; gap: 15px; width: max-content; padding: 10px 14px; border-radius: 8px; color: #f6e2c2; text-decoration: none; background: radial-gradient(ellipse, #372c2066, transparent 75%); transition: background .3s, color .3s; }
+.mw-universe-portal img { flex-shrink: 0; width: 64px; height: 64px; opacity: .86; transition: opacity .3s, transform .5s; }
+.mw-universe-portal > span { display: grid; gap: 8px; }
+.mw-universe-portal small { font-size: 7px; color: #dcc29a; letter-spacing: 1.8px; }
+.mw-universe-portal strong { display: flex; align-items: center; gap: 22px; font-size: 15px; letter-spacing: 1px; font-weight: 500; }
+.mw-universe-portal i { font-size: 13px; font-style: normal; color: #e7c28c; }
+.mw-universe-portal em { color: #dfcbaa; font-size: 9px; font-style: normal; letter-spacing: .7px; }
+.mw-universe-portal:hover, .mw-universe-portal:focus-visible { color: #fff5de; background: radial-gradient(ellipse, #43372a99, transparent 80%); }
+.mw-universe-portal:hover img, .mw-universe-portal:focus-visible img { opacity: 1; transform: rotate(-8deg) scale(1.04); }
+.mw-universe-portal:focus-visible { outline: 1px solid #f2d8ab; outline-offset: 5px; }
+.mw-room-return-wash { position: absolute; inset: 0; z-index: 5; pointer-events: none; background: radial-gradient(ellipse at 56% 65%, #163046d9, #0b1624f0); animation: mw-room-return 1.3s ease-out both; }
+@keyframes mw-room-return { from { opacity: 1; } to { opacity: 0; } }
+@media (max-width: 760px) { .mw-universe-portal { left: 50%; bottom: 22.5%; gap: 9px; padding: 8px 12px; }.mw-universe-portal img { width: 49px; height: 49px; }.mw-universe-portal > span { gap: 6px; }.mw-universe-portal strong { font-size: 13px; }.mw-universe-portal small { font-size: 6px; letter-spacing: 1.3px; }.mw-universe-portal em { font-size: 8px; } }
+@media (max-height: 620px) and (min-width: 761px) { .mw-universe-portal { bottom: 15%; }.mw-universe-portal img { width: 47px; height: 47px; }.mw-universe-portal > span { gap: 5px; }.mw-universe-portal strong { font-size: 12px; }.mw-universe-portal em { display: none; } }
+@media (max-height: 680px) and (max-width: 760px) and (orientation: portrait) { .mw-universe-portal { bottom: 185px; gap: 8px; padding: 6px 10px; }.mw-universe-portal img { width: 32px; height: 32px; }.mw-universe-portal > span { gap: 0; }.mw-universe-portal strong { font-size: 12px; }.mw-universe-portal small, .mw-universe-portal em { display: none; } }
+@media (max-height: 500px) and (orientation: landscape) { .mw-universe-portal { left: 24px; right: auto; top: 65px; bottom: auto; transform: none; padding: 4px 0; gap: 5px; }.mw-universe-portal img { width: 28px; height: 28px; }.mw-universe-portal strong { font-size: 10px; gap: 8px; }.mw-universe-portal small, .mw-universe-portal em { display: none; } }
+@media (prefers-reduced-motion: reduce) { .mw-room-return-wash { animation: none; opacity: 0; }.mw-universe-portal, .mw-universe-portal img { transition: none; } }

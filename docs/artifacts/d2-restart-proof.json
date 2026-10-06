@@ -1,0 +1,14 @@
+{
+  "checkedAt": "2026-10-02T17:34:39.992Z",
+  "standaloneInIsolatedFolder": true,
+  "distinctProcessRestart": true,
+  "libraryTracks": 3,
+  "librarySources": 9,
+  "demoTracks": 60,
+  "demoNodes": 30,
+  "demoEdges": 38,
+  "exactLibraryAndWorldMatch": true,
+  "repeatedImportReused": true,
+  "sqliteIntegrity": "ok",
+  "foreignKeyViolations": 0
+}

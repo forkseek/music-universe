@@ -1,0 +1,28 @@
+{
+  "url": "http://127.0.0.1:3002/#hall",
+  "status": 200,
+  "scene": "moving",
+  "resolution": "2688x1536",
+  "buffer": [
+    2611,
+    1492
+  ],
+  "policy": "default-src 'self'; script-src 'self' 'nonce-q0uwNG+0S+gbAlOYg7plKsnobYTtB2wT' 'strict-dynamic'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-src 'self'; frame-ancestors 'none';",
+  "headers": {
+    "cross-origin-opener-policy": "same-origin-allow-popups",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "cache-control": "private, no-store"
+  },
+  "cloudBounds": {
+    "x": 461.21875,
+    "y": 559.265625,
+    "width": 290,
+    "height": 208.8125
+  },
+  "errors": [],
+  "consoleErrors": [],
+  "violations": []
+}

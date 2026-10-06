@@ -1,0 +1,18 @@
+export type RenderQuality = 'auto' | 'high' | 'low'
+
+/** Fit the fixed solar-system data inside any viewport without letterboxing. */
+export function getGalaxyFraming(width: number, height: number, planetCount = 10) {
+  const safeWidth = Number.isFinite(width) ? Math.max(1, width) : 1
+  const safeHeight = Number.isFinite(height) ? Math.max(1, height) : 1
+  const aspect = safeWidth / safeHeight
+  const fov = 36
+  const viewWidth = Math.max(34, (safeHeight < 520 ? 23 : 21) * aspect)
+  const distance = viewWidth / (2 * Math.tan(fov * Math.PI / 360) * aspect)
+  return {
+    fov, distance, viewWidth, viewHeight: viewWidth / aspect,
+    target: [0, -0.65, 0] as [number, number, number],
+    minDistance: distance * 0.94, maxDistance: distance * 1.13,
+    yaw: planetCount > 20 ? 0.045 : 0.12,
+    pitch: planetCount > 20 ? 0.014 : 0.055,
+  }
+}

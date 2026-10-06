@@ -1,0 +1,140 @@
+export function CameraDirector({ galaxy, navigation, onReady, resetKey, playing }: { galaxy: AlbumGalaxy; navigation: GalaxyNavigation; world: WorldRef; onReady: () => void; resetKey: number; playing: boolean }) {
+  const { camera, size, gl, invalidate } = useThree()
+  const framing = useMemo(() => getGalaxyFraming(size.width, size.height, galaxy.planets.length), [size.width, size.height, galaxy.planets.length])
+  const reduced = useMemo(() => matchMedia('(prefers-reduced-motion: reduce)').matches, [])
+  const motion = useMemo(() => new SpaceCameraController(camera as PerspectiveCamera, framing, navigation.setCameraMode), [camera, navigation.setCameraMode])
+  const backdrop = useMemo(() => ({ x: 0, y: 0, scale: 1.08, rotation: 0, forward: new Vector3(), up: new Vector3(), frames: 0 }), [])
+  const pointer = useMemo(() => new Vector2(), [])
+  const initialReset = useRef(true)
+  useEffect(() => { motion.setFraming(framing); invalidate() }, [motion, framing, invalidate])
+  useEffect(() => { onReady(); invalidate() }, [onReady, invalidate])
+  useEffect(() => { invalidate() }, [navigation.view, playing, invalidate])
+  useEffect(() => {
+    if (initialReset.current) { initialReset.current = false; return }
+    motion.recenter(); invalidate()
+  }, [resetKey, motion, invalidate])
+  useEffect(() => {
+    const canvas = gl.domElement
+    let dragPointer = -1, lastX = 0, lastY = 0, lastAt = 0, pointerSeen = false, hadLock = false
+    const touches = new Set<number>()
+    const releaseLock = () => { if (document.pointerLockElement === canvas) document.exitPointerLock() }
+    const releaseCapture = () => { if (dragPointer >= 0 && canvas.hasPointerCapture(dragPointer)) canvas.releasePointerCapture(dragPointer); dragPointer = -1 }
+    const recenter = () => {
+      motion.recenter(); navigation.reset(); releaseCapture(); releaseLock(); pointerSeen = false; invalidate()
+    }
+    const requestLock = () => {
+      canvas.focus({ preventScroll: true })
+      if (!matchMedia('(pointer: fine)').matches || !canvas.requestPointerLock || document.pointerLockElement === canvas) return
+      try { const result = canvas.requestPointerLock(); result?.catch(() => { pointerSeen = false }) } catch { pointerSeen = false }
+    }
+    const toggleFree = () => {
+      window.dispatchEvent(new Event('pointercancel'))
+      if (motion.getState().mode === 'free') recenter()
+      else { motion.toggleFree(); requestLock(); pointerSeen = false; invalidate() }
+    }
+    navigation.cameraActions.current = { toggleFree, recenter, zoomFree: (pixels) => { motion.zoomFree(pixels); invalidate() } }
+    navigation.projectAnchor.current = (view, point) => {
+      const bounds = canvas.getBoundingClientRect()
+      pointer.set((point.x - bounds.left) / bounds.width * 2 - 1, 1 - (point.y - bounds.top) / bounds.height * 2)
+      return motion.projectAnchor(view, pointer)
+    }
+    const cancel = () => { touches.clear(); releaseCapture(); motion.cancel(); pointerSeen = false; invalidate() }
+    const down = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') touches.add(event.pointerId)
+      if (touches.size > 1) { releaseCapture(); motion.endDrag(false); invalidate(); return }
+      if (motion.getState().mode === 'free') { if (event.pointerType !== 'touch') requestLock(); lastX = event.clientX; lastY = event.clientY; pointerSeen = true; return }
+      if (isSurfaceEvent(event) || event.button !== 0) return
+      dragPointer = event.pointerId; lastX = event.clientX; lastY = event.clientY; lastAt = performance.now()
+      canvas.setPointerCapture(event.pointerId); motion.beginDrag(); canvas.style.cursor = 'grabbing'; invalidate()
+    }
+    const move = (event: PointerEvent) => {
+      if (navigation.pinching.current || touches.size > 1) { motion.endDrag(false); lastX = event.clientX; lastY = event.clientY; lastAt = performance.now(); return }
+      if (motion.getState().mode === 'free') {
+        if (document.pointerLockElement !== canvas && !pointerSeen) { lastX = event.clientX; lastY = event.clientY; pointerSeen = true; return }
+        const dx = document.pointerLockElement === canvas ? event.movementX : pointerSeen ? event.clientX - lastX : 0
+        const dy = document.pointerLockElement === canvas ? event.movementY : pointerSeen ? event.clientY - lastY : 0
+        motion.look(dx, dy); lastX = event.clientX; lastY = event.clientY; pointerSeen = true; invalidate(); return
+      }
+      if (event.pointerId !== dragPointer) return
+      const now = performance.now()
+      motion.drag(event.clientX - lastX, event.clientY - lastY, (now - lastAt) / 1000)
+      lastX = event.clientX; lastY = event.clientY; lastAt = now; invalidate()
+    }
+    const up = (event: PointerEvent) => {
+      touches.delete(event.pointerId)
+      if (event.pointerId !== dragPointer) return
+      releaseCapture(); motion.endDrag(performance.now() - lastAt < 120 && !reduced && touches.size === 0); canvas.style.cursor = ''; invalidate()
+    }
+    const doubleClick = (event: MouseEvent) => { if (!isSurfaceEvent(event)) { event.preventDefault(); recenter() } }
+    const movementKeys = /^(KeyW|KeyA|KeyS|KeyD|KeyQ|KeyE|Space|ShiftLeft|ShiftRight|ControlLeft|ControlRight)$/
+    const editable = (event: KeyboardEvent) => event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable=true],button,a')
+    const keyDown = (event: KeyboardEvent) => {
+      if (motion.getState().mode !== 'free' || !movementKeys.test(event.code) || editable(event) || document.querySelector('dialog[open]')) return
+      event.preventDefault(); motion.keys.add(event.code); invalidate()
+    }
+    const keyUp = (event: KeyboardEvent) => { if (movementKeys.test(event.code)) { motion.keys.delete(event.code); invalidate() } }
+    const lockChanged = () => {
+      const locked = document.pointerLockElement === canvas
+      if (hadLock && !locked && motion.getState().mode === 'free') recenter()
+      hadLock = locked; pointerSeen = false
+    }
+    const visibility = () => { if (document.hidden) { cancel(); releaseLock() } }
+    canvas.addEventListener('pointerdown', down)
+    canvas.addEventListener('pointermove', move)
+    canvas.addEventListener('dblclick', doubleClick)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', cancel)
+    window.addEventListener('blur', cancel)
+    window.addEventListener('keydown', keyDown)
+    window.addEventListener('keyup', keyUp)
+    document.addEventListener('pointerlockchange', lockChanged)
+    document.addEventListener('visibilitychange', visibility)
+    return () => {
+      canvas.removeEventListener('pointerdown', down); canvas.removeEventListener('pointermove', move); canvas.removeEventListener('dblclick', doubleClick)
+      window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', cancel); window.removeEventListener('blur', cancel)
+      window.removeEventListener('keydown', keyDown); window.removeEventListener('keyup', keyUp)
+      document.removeEventListener('pointerlockchange', lockChanged); document.removeEventListener('visibilitychange', visibility)
+      releaseCapture(); motion.cancel(); navigation.cameraActions.current = null; navigation.projectAnchor.current = null; releaseLock()
+    }
+  }, [motion, navigation.cameraActions, navigation.projectAnchor, navigation.reset, navigation.pinching, gl, pointer, reduced, invalidate])
+  useFrame((_, delta) => {
+    const result = motion.update(Math.min(delta, 0.08), navigation.viewRef.current, playing, reduced)
+    const state = motion.getState()
+    camera.updateMatrixWorld()
+    backdrop.forward.set(0, 0, -1).applyQuaternion(camera.quaternion)
+    backdrop.up.set(0, 1, 0).applyQuaternion(camera.quaternion)
+    const limit = Math.min(size.width, size.height) * 0.06
+    const tx = MathUtils.clamp((-backdrop.forward.x - (camera.position.x - navigation.viewRef.current.center[0]) * 0.05) * 46, -limit, limit)
+    const ty = MathUtils.clamp((backdrop.forward.y + (camera.position.y - navigation.viewRef.current.center[1]) * 0.05) * 46, -limit, limit)
+    const scale = MathUtils.clamp(1.08 + (framing.distance - state.radius) * 0.012, 1.08, 1.30)
+    const roll = Math.atan2(backdrop.up.x, backdrop.up.y) * 180 / Math.PI
+    const rotation = MathUtils.clamp(roll * 1.2 + state.theta * 8, -10, 10)
+    const ease = 1 - Math.exp(-Math.min(delta, .12) * 6)
+    backdrop.x = MathUtils.damp(backdrop.x, tx, 6, Math.min(delta, .12))
+    backdrop.y = MathUtils.damp(backdrop.y, ty, 6, Math.min(delta, .12))
+    backdrop.scale += (scale - backdrop.scale) * ease
+    backdrop.rotation += (rotation - backdrop.rotation) * ease
+    const backdropMoving = Math.abs(backdrop.x - tx) + Math.abs(backdrop.y - ty) + Math.abs(backdrop.scale - scale) + Math.abs(backdrop.rotation - rotation) > .0002
+    const element = navigation.backdrop.current
+    if (element) {
+      element.style.transform = `translate3d(${backdrop.x.toFixed(4)}px,${backdrop.y.toFixed(4)}px,0) rotate(${backdrop.rotation.toFixed(5)}deg) scale(${backdrop.scale.toFixed(6)})`
+      element.dataset.rotation = backdrop.rotation.toFixed(6)
+      element.dataset.parallaxX = backdrop.x.toFixed(6); element.dataset.parallaxY = backdrop.y.toFixed(6)
+      element.dataset.scale = backdrop.scale.toFixed(6)
+    }
+    gl.domElement.dataset.viewMode = 'continuous'
+    gl.domElement.dataset.focusTarget = navigation.viewRef.current.target
+    gl.domElement.dataset.zoom = navigation.viewRef.current.zoom.toFixed(6)
+    gl.domElement.dataset.renderedZoom = (state.radius / framing.distance).toFixed(6)
+    gl.domElement.dataset.cameraX = camera.position.x.toFixed(6); gl.domElement.dataset.cameraY = camera.position.y.toFixed(6); gl.domElement.dataset.cameraZ = camera.position.z.toFixed(6)
+    gl.domElement.dataset.cameraMode = state.mode
+    gl.domElement.dataset.cameraTheta = state.theta.toFixed(6); gl.domElement.dataset.cameraPhi = state.phi.toFixed(6)
+    gl.domElement.dataset.cameraRoll = state.roll.toFixed(6); gl.domElement.dataset.cameraFov = (camera as PerspectiveCamera).fov.toFixed(6)
+    gl.domElement.dataset.cameraMoving = String(result.moving || backdropMoving)
+    gl.domElement.dataset.cameraDrifting = String(result.drifting)
+    gl.domElement.dataset.cameraQuaternion = JSON.stringify(camera.quaternion.toArray())
+    gl.domElement.dataset.frameCount = String(++backdrop.frames)
+    if (result.moving || result.drifting || backdropMoving) invalidate()
+  }, -0.5)
+  return null
+}

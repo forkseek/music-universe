@@ -1,0 +1,31 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { initialGalaxyView, MAX_SCENE_ZOOM, MIN_SCENE_ZOOM, zoomGalaxyView } from '../src/lib/galaxyNavigation'
+
+test('view hysteresis prevents overview / focus flicker in the transition band', () => {
+  let view = { ...initialGalaxyView(), mode: 'focus' as const, target: 'track-3', zoom: 1 }
+  let next = zoomGalaxyView(view, 240)
+  assert.equal(next.mode, 'focus')
+  next = zoomGalaxyView(next, 240)
+  assert.equal(next.mode, 'overview')
+  next = zoomGalaxyView(next, -240)
+  assert.equal(next.mode, 'overview')
+  next = zoomGalaxyView(next, -240)
+  assert.equal(next.mode, 'focus')
+  assert.equal(next.target, view.target)
+  assert.equal(view.zoom, 1)
+})
+
+test('trackpad spikes and invalid deltas cannot escape bounds or alter the selected target', () => {
+  let view = initialGalaxyView()
+  view.target = 'kept-track'
+  for (let index = 0; index < 2000; index++) {
+    const old = JSON.stringify(view)
+    const next = zoomGalaxyView(view, Math.sin(index) * 1e8)
+    assert.equal(JSON.stringify(view), old)
+    assert.ok(Number.isFinite(next.zoom) && next.zoom >= MIN_SCENE_ZOOM && next.zoom <= MAX_SCENE_ZOOM)
+    assert.equal(next.target, 'kept-track')
+    view = next
+  }
+  for (const delta of [NaN, Infinity, -Infinity, 0]) assert.equal(zoomGalaxyView(view, delta), view)
+})

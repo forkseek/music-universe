@@ -1,0 +1,30 @@
+import { DEFAULT_ALBUM } from '../data/albums'
+import type { Album, Track } from './generateAlbumGalaxy'
+
+const SESSION_KEY = 'music-universe:exploration:v1'
+export const DEFAULT_SEED = 'GLASS-2025'
+interface Exploration { album: Album; seed: string }
+
+export function readExploration(): Exploration {
+  const fallback = { album: DEFAULT_ALBUM, seed: DEFAULT_SEED }
+  try {
+    const value = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null')
+    if (!value || typeof value.seed !== 'string' || !value.seed.trim() || value.seed.length > 80) return fallback
+    const album = value.album
+    if (!album || !['id', 'name', 'artist', 'cover'].every((key) => typeof album[key] === 'string' && album[key].trim())) return fallback
+    if (album.year !== undefined && (typeof album.year !== 'number' || !Number.isFinite(album.year))) return fallback
+    if (!Array.isArray(album.tracks) || album.tracks.length < 1 || album.tracks.length > 40) return fallback
+    if (!album.tracks.every((track: Track) => track && typeof track.id === 'string' && track.id.trim() && typeof track.title === 'string' && track.title.trim()
+      && (track.duration === undefined || (typeof track.duration === 'number' && Number.isFinite(track.duration) && track.duration > 0)))) return fallback
+    if (new Set(album.tracks.map((track: Track) => track.id)).size !== album.tracks.length) return fallback
+    return { album, seed: value.seed }
+  } catch { return fallback }
+}
+
+export function rememberExploration(value: Exploration) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(value)) }
+  catch {
+    // Storage may be disabled or full after an upload. Editing remains available.
+    try { sessionStorage.removeItem(SESSION_KEY) } catch { /* Storage unavailable. */ }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "checkedAt": "2026-10-03T06:34:32.568Z",
+  "standaloneInIsolatedFolder": true,
+  "distinctProcessRestart": true,
+  "libraryTracks": 3,
+  "librarySources": 9,
+  "demoTracks": 60,
+  "demoNodes": 30,
+  "demoEdges": 38,
+  "journeyStops": 5,
+  "journeyIntent": "更梦幻一点",
+  "journeyMode": "deterministic",
+  "exactLibraryWorldAndJourneyMatch": true,
+  "repeatedImportReused": true,
+  "localHostOriginAcceptedWithoutConfiguration": true,
+  "foreignOriginRejected": true,
+  "sqliteIntegrity": "ok",
+  "foreignKeyViolations": 0
+}

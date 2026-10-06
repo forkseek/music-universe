@@ -1,0 +1,164 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { PerspectiveCamera, Vector2, Vector3 } from 'three'
+import { SpaceCameraController } from '../src/lib/spaceCamera'
+import { getGalaxyFraming } from '../src/lib/sceneFraming'
+import { initialGalaxyView, zoomGalaxyView } from '../src/lib/galaxyNavigation'
+
+function fixture() {
+  const framing = getGalaxyFraming(1600, 900)
+  const camera = new PerspectiveCamera(36, 1600 / 900, 0.1, 400)
+  const modes: string[] = []
+  const controller = new SpaceCameraController(camera, framing, mode => modes.push(mode))
+  return { camera, controller, framing, modes }
+}
+function settle(controller: SpaceCameraController, view = initialGalaxyView(), frames = 240) {
+  for (let i = 0; i < frames; i++) controller.update(1 / 60, view, false, false)
+}
+
+test('orbit distance changes continuously while song selection never moves the camera', () => {
+  const { camera, controller, framing } = fixture()
+  let view = initialGalaxyView()
+  assert.ok(Math.abs(controller.getState().radius - framing.distance) < 1e-10)
+  for (let i = 0; i < 40; i++) {
+    const previous = camera.position.clone()
+    view = zoomGalaxyView(view, -8)
+    controller.update(1 / 60, view, false, false)
+    assert.ok(camera.position.z < previous.z)
+    assert.ok(previous.distanceTo(camera.position) < framing.distance * 0.015)
+  }
+  settle(controller, view)
+  assert.ok(Math.abs(controller.getState().radius - framing.distance * view.zoom) < 1e-10)
+  const previous = camera.position.clone()
+  settle(controller, { ...view, target: 'different-song' })
+  assert.ok(previous.distanceTo(camera.position) < 1e-12)
+  const wider = getGalaxyFraming(2400, 900)
+  controller.setFraming(wider)
+  settle(controller, view)
+  assert.ok(Math.abs(controller.getState().radius - wider.distance * view.zoom) < 1e-10)
+})
+
+test('orbit drag has decaying release inertia, and reduced motion suppresses that inertia', () => {
+  const { controller } = fixture()
+  const view = initialGalaxyView()
+  controller.beginDrag()
+  controller.drag(100, 20, 1 / 60)
+  controller.update(1 / 60, view, false, false)
+  controller.endDrag()
+  const released = controller.getState().theta
+  settle(controller, view)
+  assert.ok(controller.getState().theta < released - 0.3)
+  assert.equal(controller.getState().moving, false)
+  const reduced = fixture().controller
+  reduced.beginDrag(); reduced.drag(100, 20, 1 / 60); reduced.endDrag()
+  for (let i = 0; i < 240; i++) reduced.update(1 / 60, view, false, true)
+  assert.ok(Math.abs(reduced.getState().theta + 0.52) < 1e-10)
+  assert.ok(Math.abs(reduced.getState().phi - 0.104) < 1e-10)
+  assert.equal(reduced.getState().moving, false)
+})
+
+test('free camera captures the exact pose, accelerates, rolls, and settles after release', () => {
+  const { camera, controller, modes } = fixture()
+  controller.beginDrag(); controller.drag(80, -20, 0.03); controller.endDrag(false)
+  settle(controller)
+  const position = camera.position.clone()
+  const quaternion = camera.quaternion.clone()
+  controller.toggleFree()
+  assert.equal(controller.getState().mode, 'free')
+  assert.ok(camera.position.distanceTo(position) < 1e-12)
+  assert.ok(1 - Math.abs(camera.quaternion.dot(quaternion)) < 1e-12)
+  controller.keys.add('KeyW'); controller.keys.add('KeyQ')
+  for (let i = 0; i < 60; i++) controller.update(1 / 60, initialGalaxyView(), false, false)
+  assert.ok(camera.position.distanceTo(position) > 1.9)
+  assert.ok(Math.abs(controller.getState().roll - 0.9) < 1e-10)
+  controller.keys.clear()
+  settle(controller)
+  assert.equal(controller.getState().moving, false)
+  assert.deepEqual(modes, ['free'])
+  controller.zoomFree(-10000)
+  settle(controller)
+  assert.ok(camera.fov >= 26 && camera.fov <= 72)
+  controller.look(120, -200)
+  controller.update(1 / 60, initialGalaxyView(), false, false)
+  assert.ok(camera.quaternion.toArray().every(Number.isFinite))
+})
+
+test('free camera movement is consistent at different frame rates', () => {
+  const thirty = fixture(), high = fixture()
+  for (const entry of [thirty, high]) { entry.controller.toggleFree(); entry.controller.keys.add('KeyW'); entry.controller.keys.add('ShiftLeft') }
+  for (let i = 0; i < 30; i++) thirty.controller.update(1 / 30, initialGalaxyView(), false, false)
+  for (let i = 0; i < 120; i++) high.controller.update(1 / 120, initialGalaxyView(), false, false)
+  assert.ok(thirty.camera.position.distanceTo(high.camera.position) < 1e-10)
+})
+
+test('recenter smoothly restores the offset baseline and clears free movement', () => {
+  const { camera, controller, framing, modes } = fixture()
+  controller.toggleFree()
+  controller.keys.add('KeyD'); controller.keys.add('Space'); controller.keys.add('KeyQ')
+  for (let i = 0; i < 90; i++) controller.update(1 / 60, initialGalaxyView(), false, false)
+  controller.zoomFree(240)
+  const from = camera.position.clone()
+  const baseline = new Vector3(...framing.target).add(new Vector3(0, 0, framing.distance))
+  const distance = from.distanceTo(baseline)
+  controller.recenter()
+  assert.equal(controller.keys.size, 0)
+  assert.ok(camera.position.distanceTo(from) < 1e-12)
+  controller.update(0.1, initialGalaxyView(), false, false)
+  assert.ok(camera.position.distanceTo(from) > 0)
+  assert.ok(camera.position.distanceTo(baseline) > 0)
+  assert.ok(camera.position.distanceTo(baseline) < distance)
+  settle(controller)
+  assert.ok(camera.position.distanceTo(baseline) < 1e-12)
+  assert.equal(controller.getState().mode, 'orbit')
+  assert.equal(controller.getState().moving, false)
+  assert.ok(Math.abs(controller.getState().radius - framing.distance) < 1e-10)
+  assert.equal(camera.fov, 36)
+  assert.deepEqual(modes, ['free', 'orbit'])
+})
+
+test('manual zoom can interrupt recenter without jumping to the baseline', () => {
+  const { camera, controller, framing } = fixture()
+  controller.toggleFree(); controller.keys.add('KeyD')
+  for (let i = 0; i < 60; i++) controller.update(1 / 60, initialGalaxyView(), false, false)
+  controller.recenter(); controller.update(0.1, initialGalaxyView(), false, false)
+  const previous = camera.position.clone()
+  const view = zoomGalaxyView(initialGalaxyView(), -20)
+  controller.update(1 / 120, view, false, false)
+  assert.ok(previous.distanceTo(camera.position) < framing.distance * 0.025)
+  settle(controller, view)
+  assert.ok(Math.abs(controller.getState().radius - framing.distance * view.zoom) < 1e-10)
+})
+
+test('requested ray anchor ignores camera damping and respects the orbit pose', () => {
+  const { camera, controller, framing } = fixture()
+  const view = { ...initialGalaxyView(), zoom: 0.37, center: [4, -2] as [number, number] }
+  const ndc = new Vector2(0.4, -0.3)
+  const anchor = controller.projectAnchor(view, ndc)!
+  assert.ok(Math.abs(anchor[0] - (4 + ndc.x * framing.viewWidth * view.zoom / 2)) < 1e-10)
+  assert.ok(Math.abs(anchor[1] - (-2 + ndc.y * framing.viewHeight * view.zoom / 2)) < 1e-10)
+  assert.ok(Math.abs(camera.position.z - framing.distance) < 1e-10)
+  controller.beginDrag(); controller.drag(50, 15, 0.03)
+  const rotatedAnchor = controller.projectAnchor(view, new Vector2(0, 0))!
+  assert.ok(Math.abs(rotatedAnchor[0] - view.center[0]) < 1e-9)
+  assert.ok(Math.abs(rotatedAnchor[1] - view.center[1]) < 1e-9)
+  controller.endDrag(false); controller.toggleFree()
+  assert.equal(controller.projectAnchor(view, ndc), undefined)
+})
+
+test('cinematic drift freezes while paused, but camera zoom still moves', () => {
+  const { camera, controller } = fixture()
+  const view = initialGalaxyView()
+  for (let i = 0; i < 180; i++) controller.update(1 / 60, view, true, false)
+  assert.equal(controller.getState().moving, false)
+  assert.equal(controller.getState().drifting, true)
+  const paused = camera.position.clone(), quaternion = camera.quaternion.clone()
+  settle(controller, view)
+  assert.ok(camera.position.distanceTo(paused) < 1e-12)
+  assert.ok(1 - Math.abs(camera.quaternion.dot(quaternion)) < 1e-12)
+  assert.equal(controller.getState().drifting, false)
+  controller.update(1 / 60, zoomGalaxyView(view, -20), false, false)
+  assert.equal(controller.getState().moving, true)
+  assert.ok(camera.position.distanceTo(paused) > 0)
+  controller.update(1 / 60, view, true, true)
+  assert.equal(controller.getState().drifting, false)
+})

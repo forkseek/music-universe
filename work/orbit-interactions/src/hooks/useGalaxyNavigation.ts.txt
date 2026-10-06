@@ -1,0 +1,89 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { RefObject } from 'react'
+import { ALBUM_TARGET, initialGalaxyView, readWheelTarget, zoomGalaxyView } from '../lib/galaxyNavigation'
+import type { GalaxyView } from '../lib/galaxyNavigation'
+
+export function useGalaxyNavigation(host: RefObject<HTMLElement | null>, resetKey: number, onFocus: (target: string) => void) {
+  const [view, setView] = useState(initialGalaxyView)
+  const viewRef = useRef(view)
+  const onFocusRef = useRef(onFocus)
+  useEffect(() => { onFocusRef.current = onFocus }, [onFocus])
+  const update = useCallback((next: GalaxyView) => { viewRef.current = next; setView(next) }, [])
+  const focus = useCallback((target: string) => {
+    const current = viewRef.current
+    if (current.transitioning) return
+    update({ ...current, mode: 'focus', target, zoom: 1, transitioning: true })
+    onFocusRef.current(target)
+    document.body.style.cursor = ''
+  }, [update])
+  const activate = useCallback((target: string) => {
+    update({ ...viewRef.current, target })
+    onFocusRef.current(target)
+  }, [update])
+  const overview = useCallback(() => {
+    update({ ...initialGalaxyView(), target: viewRef.current.target, transitioning: true })
+  }, [update])
+  const finishTravel = useCallback(() => {
+    if (viewRef.current.transitioning) update({ ...viewRef.current, transitioning: false })
+  }, [update])
+  const holdGesture = useCallback(() => { viewRef.current.gestureUntil = performance.now() + 420 }, [])
+  const zoomBy = useCallback((pixels: number, target?: string) => {
+    const current = viewRef.current
+    if (current.transitioning) return
+    if (current.mode === 'overview' && pixels < 0 && target !== undefined) { focus(target); return }
+    const next = zoomGalaxyView(current, pixels)
+    if (next === current) return
+    if (next.mode !== current.mode) next.transitioning = true
+    update(next)
+  }, [focus, update])
+  useEffect(() => {
+    update(initialGalaxyView())
+    onFocusRef.current(ALBUM_TARGET)
+  }, [resetKey, update])
+  useEffect(() => {
+    const element = host.current
+    if (!element) return
+    const wheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey || event.buttons || document.querySelector('dialog[open]')) return
+      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[data-scroll-native]')) return
+      if (!event.deltaY) return
+      event.preventDefault()
+      const pixels = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientHeight : 1)
+      zoomBy(pixels, readWheelTarget(event))
+    }
+    const touches = new Map<number, { x: number; y: number }>()
+    let pinchDistance = 0
+    const distance = () => { const points = [...touches.values()]; return points.length === 2 ? Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y) : 0 }
+    const pointerDown = (event: PointerEvent) => {
+      if (event.pointerType !== 'touch') return
+      touches.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      pinchDistance = distance()
+    }
+    const pointerMove = (event: PointerEvent) => {
+      if (!touches.has(event.pointerId)) return
+      touches.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      const next = distance()
+      if (next > 0 && pinchDistance > 0) {
+        event.preventDefault()
+        zoomBy(Math.log(pinchDistance / next) / 0.00165)
+      }
+      pinchDistance = next
+    }
+    const pointerUp = (event: PointerEvent) => { touches.delete(event.pointerId); pinchDistance = distance() }
+    element.addEventListener('wheel', wheel, { passive: false })
+    element.addEventListener('pointerdown', pointerDown)
+    element.addEventListener('pointermove', pointerMove, { passive: false })
+    window.addEventListener('pointerup', pointerUp)
+    window.addEventListener('pointercancel', pointerUp)
+    return () => {
+      element.removeEventListener('wheel', wheel)
+      element.removeEventListener('pointerdown', pointerDown)
+      element.removeEventListener('pointermove', pointerMove)
+      window.removeEventListener('pointerup', pointerUp)
+      window.removeEventListener('pointercancel', pointerUp)
+    }
+  }, [host, zoomBy])
+  return { view, viewRef, focus, activate, overview, finishTravel, holdGesture }
+}
+
+export type GalaxyNavigation = ReturnType<typeof useGalaxyNavigation>

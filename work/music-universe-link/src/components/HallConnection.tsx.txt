@@ -1,0 +1,32 @@
+import { useEffect, useState } from 'react'
+import { ArrowUpRight, Disc3, Heart, Music2 } from 'lucide-react'
+import { MUSIC_HALL_URL, musicWorldHref } from '../lib/musicWorld'
+
+const doors = [
+  { room: 'world', title: '音乐电台', detail: '回到大厅的音乐电台，跟着下一首歌继续漫游。', Icon: Music2 },
+  { room: 'library', title: '我的曲库', detail: '回到你的曲库，寻找下一张想探索的专辑。', Icon: Disc3 },
+  { room: 'journey', title: '我的旅程', detail: '回到旅程入口，沿着音乐继续发现新的光点。', Icon: Heart },
+] as const
+
+export default function HallConnection() {
+  const [hint, setHint] = useState<string | null>(null)
+  useEffect(() => {
+    const dismiss = (event: KeyboardEvent) => { if (event.key === 'Escape') setHint(null) }
+    window.addEventListener('keydown', dismiss)
+    return () => window.removeEventListener('keydown', dismiss)
+  }, [])
+  return <section className="hall-connection" aria-label="与音乐大厅相连">
+    <a className="hall-companion" href={MUSIC_HALL_URL} aria-label="跟随机器人返回音乐大厅">
+      <span className="hall-companion-portrait" role="img" aria-label="音乐大厅的奶油白与橙色小机器人" />
+      <span className="hall-companion-copy"><span className="hall-connection-eyebrow">MUSIC WORLD <i /> THE SAME LITTLE VOYAGER</span><strong>大厅里的旅伴，陪你到下一片星系。</strong><span>每一首歌，都是一个入口。<span className="hall-return">返回音乐大厅 <ArrowUpRight size={11} /></span></span></span>
+    </a>
+    <nav className="hall-doors" aria-label="音乐大厅快捷入口">
+      {doors.map(({ room, title, detail, Icon }) => <div className="hall-door" key={room} onMouseEnter={() => setHint(room)} onMouseLeave={() => setHint(null)}>
+        <a href={musicWorldHref(room)} aria-label={`前往${title}`} aria-describedby={hint === room ? `hall-hint-${room}` : undefined} onFocus={() => setHint(room)} onBlur={() => setHint(null)}>
+          <span className={`hall-door-ring hall-door-${room}`}><Icon size={18} strokeWidth={1.45} /></span><span>{title}</span><ArrowUpRight size={12} />
+        </a>
+        {hint === room && <div className="hall-cloud" role="tooltip" id={`hall-hint-${room}`}><span>光点里的入口</span><strong>{title}</strong><p>{detail}</p><small>点击进入 <ArrowUpRight size={10} /></small></div>}
+      </div>)}
+    </nav>
+  </section>
+}

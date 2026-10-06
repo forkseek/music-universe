@@ -1,0 +1,39 @@
+import { parseLyrics, type ListeningTrack } from "@/components/player/player-library";
+import type { RadiohandSong } from "./radiohand-qq";
+
+export interface ListeningConnection { configured: boolean; authorized: boolean; message: string }
+
+async function responseJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(path, { headers: { "X-Music-World": "1" }, cache: "no-store", signal });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error?.message ?? "音乐接口暂时不可用，请重试。");
+  return result as T;
+}
+
+export function listeningConnection(signal?: AbortSignal) {
+  return responseJson<ListeningConnection>("/api/qq/status", signal);
+}
+
+export async function searchListeningTracks(keywords: string, signal?: AbortSignal) {
+  const result = await responseJson<{ songs: RadiohandSong[] }>("/api/qq/search?keywords=" + encodeURIComponent(keywords) + "&limit=8", signal);
+  return result.songs.map((song): ListeningTrack => ({
+    id: crypto.randomUUID(), title: song.name, artist: song.artist || "QQ 音乐", duration: song.duration / 1000,
+    genre: song.fee ? "会员曲目" : "在线歌曲", url: "", artwork: song.cover || "/media/scene-light.webp", source: "qqmusic", lyrics: [],
+    description: "在熟悉的旋律里，遇见一个新的音乐世界。",
+    online: { mid: song.mid, mediaMid: song.mediaMid, songId: song.qqId, albumMid: song.albumMid, fee: song.fee },
+    externalUrl: "https://y.qq.com/n/ryqq/songDetail/" + encodeURIComponent(song.mid),
+  }));
+}
+
+export async function resolveListeningAudio(track: ListeningTrack, signal?: AbortSignal) {
+  if (track.source !== "qqmusic" || !track.online) return { url: track.url, quality: track.source === "local" ? "本地音乐" : "原创试听", trial: false };
+  const query = new URLSearchParams({ mid: track.online.mid, mediaMid: track.online.mediaMid });
+  const result = await responseJson<{ url: string; playable: boolean; message?: string; quality?: string; trial?: boolean }>("/api/qq/song/url?" + query, signal);
+  if (!result.playable || !result.url) throw new Error(result.message ?? "这首歌暂时无法播放，可在 QQ 音乐中查看。");
+  return { url: result.url, quality: result.quality ?? "标准音质", trial: result.trial === true };
+}
+
+export async function listeningLyrics(mid: string, signal?: AbortSignal) {
+  const result = await responseJson<{ lyric: string }>("/api/qq/lyric?mid=" + encodeURIComponent(mid), signal);
+  return parseLyrics(result.lyric);
+}

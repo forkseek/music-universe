@@ -1,0 +1,8 @@
+import {readFile,writeFile} from 'node:fs/promises'
+const file='C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe/src/components/SceneInteraction.tsx'
+let text=await readFile(file,'utf8')
+text=text.replace('pointerSeen = false, hadLock = false', 'pointerSeen = false, hadLock = false, disposed = false')
+text=text.replace("      if (isSurfaceEvent(event) || event.button !== 0) return\n      dragPointer = event.pointerId; lastX = event.clientX; lastY = event.clientY; lastAt = performance.now()\n      canvas.setPointerCapture(event.pointerId); motion.beginDrag(); canvas.style.cursor = 'grabbing'; invalidate()", "      // R3F connects its event manager after descendant effects; let all mesh handlers claim the event first.\n      queueMicrotask(() => {\n        if (disposed || isSurfaceEvent(event) || event.button !== 0 || touches.size > 1 || navigation.pinching.current) return\n        dragPointer = event.pointerId; lastX = event.clientX; lastY = event.clientY; lastAt = performance.now()\n        canvas.setPointerCapture(event.pointerId); motion.beginDrag(); canvas.style.cursor = 'grabbing'; invalidate()\n      })")
+text=text.replace("const doubleClick = (event: MouseEvent) => { if (!isSurfaceEvent(event)) { event.preventDefault(); recenter() } }", "const doubleClick = (event: MouseEvent) => { queueMicrotask(() => { if (!disposed && !isSurfaceEvent(event)) { recenter() } }) }")
+text=text.replace("    return () => {\n      canvas.removeEventListener('pointerdown', down)", "    return () => {\n      disposed = true\n      canvas.removeEventListener('pointerdown', down)")
+await writeFile(file,text)

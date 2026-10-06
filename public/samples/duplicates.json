@@ -1,0 +1,5 @@
+[
+  { "title": " Let   Down ", "artist": "Radiohead", "album": "OK Computer", "provider": "qqmusic", "externalId": "test-qq-1" },
+  { "title": "let down", "artist": "RADIOHEAD", "album": "OK Computer", "provider": "netease", "externalId": "test-ne-1" },
+  { "title": "Ｌｅｔ Ｄｏｗｎ", "artist": "Radiohead", "album": "OK Computer" }
+]

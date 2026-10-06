@@ -1,0 +1,150 @@
+import { useEffect, useMemo, useRef } from 'react'
+import type { RefObject } from 'react'
+import { useFrame, useThree } from '@react-three/fiber'
+import type { ThreeEvent } from '@react-three/fiber'
+import { MathUtils, Vector3 } from 'three'
+import type { Group, Mesh } from 'three'
+import { ALBUM_TARGET, markWheelTarget, OVERVIEW_ENTER } from '../lib/galaxyNavigation'
+import type { GalaxyNavigation } from '../hooks/useGalaxyNavigation'
+import { getGalaxyFraming } from '../lib/sceneFraming'
+import type { AlbumGalaxy } from '../lib/generateAlbumGalaxy'
+
+type WorldRef = RefObject<Group | null>
+type TimeRef = RefObject<number>
+
+export function CameraDirector({ galaxy, navigation, world, onReady }: { galaxy: AlbumGalaxy; navigation: GalaxyNavigation; world: WorldRef; onReady: () => void }) {
+  const { camera, size, gl, invalidate } = useThree()
+  const smooth = useMemo(() => ({ position: new Vector3(), look: new Vector3(), desired: new Vector3(), aim: new Vector3(), initialized: false }), [])
+  useEffect(() => { onReady(); invalidate() }, [onReady, invalidate])
+  useFrame((_, delta) => {
+    const view = navigation.viewRef.current
+    if (view.gestureUntil > performance.now()) { invalidate(); return }
+    const framing = getGalaxyFraming(size.width, size.height, galaxy.planets.length)
+    if (view.mode === 'overview') {
+      smooth.aim.set(...framing.target)
+      smooth.desired.set(framing.target[0], framing.target[1], framing.distance * Math.max(0.88, 1 + (view.zoom - OVERVIEW_ENTER) * 0.3))
+    } else {
+      const planet = galaxy.planets.find((item) => item.id === view.target)
+      const position = view.target === ALBUM_TARGET || !planet ? galaxy.star.position : planet.position
+      const radius = view.target === ALBUM_TARGET || !planet ? galaxy.star.scale : planet.scale
+      smooth.aim.set(...position)
+      world.current?.updateMatrixWorld(true)
+      world.current?.localToWorld(smooth.aim)
+      const distance = radius * 2.25 / (Math.tan(framing.fov * Math.PI / 360) * Math.min(size.width / Math.max(size.height, 1), 1))
+      smooth.desired.set(smooth.aim.x, smooth.aim.y + radius * 0.06, smooth.aim.z + distance * view.zoom)
+    }
+    if (!smooth.initialized) {
+      smooth.position.copy(smooth.desired); smooth.look.copy(smooth.aim); smooth.initialized = true
+    }
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+    const ease = 1 - Math.exp(-Math.min(delta, 0.12) * (reduced ? 24 : 6.5))
+    smooth.position.lerp(smooth.desired, ease)
+    smooth.look.lerp(smooth.aim, ease)
+    camera.position.copy(smooth.position)
+    camera.lookAt(smooth.look)
+    camera.updateMatrixWorld()
+    const moving = smooth.position.distanceTo(smooth.desired) > 0.006 || smooth.look.distanceTo(smooth.aim) > 0.006
+    gl.domElement.dataset.viewMode = view.mode
+    gl.domElement.dataset.focusTarget = view.target
+    gl.domElement.dataset.zoom = view.zoom.toFixed(4)
+    gl.domElement.dataset.cameraX = camera.position.x.toFixed(4)
+    gl.domElement.dataset.cameraZ = camera.position.z.toFixed(4)
+    gl.domElement.dataset.cameraMoving = String(moving)
+    if (moving) invalidate()
+    else navigation.finishTravel()
+  }, -0.5)
+  return null
+}
+
+/** Surface gestures never rotate or reorder the solar-system layout. */
+export function useSurfaceGesture({ target, navigation, onInspect, onToggle, inspectOnClick }: { target: string; navigation: GalaxyNavigation; onInspect: () => void; onToggle: (target: string) => void; inspectOnClick: boolean }) {
+  const { invalidate, gl } = useThree()
+  const rotation = useRef({ yaw: 0, pitch: 0 })
+  const gesture = useRef({ pressed: false, dragging: false, moved: false, x: 0, y: 0, lastX: 0, lastY: 0, tapAt: 0, tapX: 0, tapY: 0, handledAt: -1000, pointer: -1 })
+  const active = () => navigation.viewRef.current.mode === 'focus' && navigation.viewRef.current.target === target
+  const clear = () => { gesture.current.pressed = false; gesture.current.dragging = false; document.body.style.cursor = '' }
+  useEffect(() => {
+    const reset = () => clear()
+    window.addEventListener('pointercancel', reset)
+    window.addEventListener('blur', reset)
+    return () => { window.removeEventListener('pointercancel', reset); window.removeEventListener('blur', reset); document.body.style.cursor = '' }
+  }, [])
+  const handlers = {
+    onWheel: (event: ThreeEvent<WheelEvent>) => { event.stopPropagation(); markWheelTarget(event.nativeEvent, target) },
+    onPointerDown: (event: ThreeEvent<PointerEvent>) => {
+      event.stopPropagation()
+      const state = gesture.current
+      state.pressed = true; state.moved = false; state.x = state.lastX = event.clientX; state.y = state.lastY = event.clientY; state.pointer = event.pointerId
+      if (navigation.viewRef.current.mode === 'focus') navigation.holdGesture()
+      if (!active()) return
+      state.dragging = true
+      ;(event.target as unknown as { setPointerCapture: (id: number) => void }).setPointerCapture(event.pointerId)
+      document.body.style.cursor = 'grabbing'
+    },
+    onPointerMove: (event: ThreeEvent<PointerEvent>) => {
+      const state = gesture.current
+      if (!state.pressed) return
+      if (Math.hypot(event.clientX - state.x, event.clientY - state.y) > 7) state.moved = true
+      if (!state.dragging) return
+      event.stopPropagation()
+      rotation.current.yaw = MathUtils.clamp(rotation.current.yaw + (event.clientX - state.lastX) * 0.004, -0.75, 0.75)
+      rotation.current.pitch = MathUtils.clamp(rotation.current.pitch + (event.clientY - state.lastY) * 0.002, -0.2, 0.2)
+      state.lastX = event.clientX; state.lastY = event.clientY
+      gl.domElement.dataset.surfaceYaw = rotation.current.yaw.toFixed(4)
+      gl.domElement.dataset.surfacePitch = rotation.current.pitch.toFixed(4)
+      invalidate()
+    },
+    onPointerUp: (event: ThreeEvent<PointerEvent>) => {
+      const state = gesture.current
+      if (state.dragging) {
+        ;(event.target as unknown as { releasePointerCapture: (id: number) => void }).releasePointerCapture(event.pointerId)
+        state.dragging = false; document.body.style.cursor = ''
+      }
+      if (!state.pressed) return
+      state.pressed = false
+      if (state.moved) { state.tapAt = 0; return }
+      if (event.pointerType === 'mouse') return
+      event.stopPropagation()
+      const now = performance.now()
+      if (state.tapAt > 0 && now - state.tapAt < 380 && Math.hypot(event.clientX - state.tapX, event.clientY - state.tapY) < 24) {
+        state.tapAt = 0; state.handledAt = now; onToggle(target)
+      } else { state.tapAt = now; state.tapX = event.clientX; state.tapY = event.clientY }
+    },
+    onPointerCancel: clear,
+    onClick: (event: ThreeEvent<MouseEvent>) => { event.stopPropagation(); if (!gesture.current.moved && inspectOnClick) onInspect() },
+    onDoubleClick: (event: ThreeEvent<MouseEvent>) => {
+      event.stopPropagation()
+      if (!gesture.current.moved && performance.now() - gesture.current.handledAt > 700) onToggle(target)
+    },
+  }
+  return { rotation, handlers }
+}
+
+export function PlaybackHalo({ radius, time, playing }: { radius: number; time: TimeRef; playing: boolean }) {
+  const rings = useRef<Group>(null)
+  useFrame(() => { if (rings.current) { rings.current.rotation.z = -0.22 + time.current * 0.08; rings.current.scale.setScalar(1 + Math.sin(time.current * 2.3) * 0.008) } })
+  return <group ref={rings} rotation={[0.35, -0.1, -0.22]} name="gesture-playback-halo">
+    <mesh><torusGeometry args={[radius * 1.28, radius * 0.008, 8, 128]} /><meshBasicMaterial color={[1.6, 1.1, 0.52]} toneMapped={false} transparent opacity={playing ? 0.55 : 0.12} depthWrite={false} /></mesh>
+    <mesh rotation={[0.08, 0, 0]}><torusGeometry args={[radius * 1.42, radius * 0.004, 6, 128]} /><meshBasicMaterial color="#abc6de" transparent opacity={playing ? 0.23 : 0.06} depthWrite={false} /></mesh>
+  </group>
+}
+
+export function SceneDiagnostics({ galaxy, world, playing, toolsVisible }: { galaxy: AlbumGalaxy; world: WorldRef; playing: boolean; toolsVisible: boolean }) {
+  const { camera, size, gl } = useThree()
+  const position = useMemo(() => new Vector3(), [])
+  const edge = useMemo(() => new Vector3(), [])
+  useFrame(() => {
+    world.current?.updateMatrixWorld(true)
+    const nodes = [{ id: ALBUM_TARGET, position: galaxy.star.position, radius: galaxy.star.scale }, ...galaxy.planets.map(planet => ({ id: planet.id, position: planet.position, radius: planet.scale }))]
+    gl.domElement.dataset.projectedTargets = JSON.stringify(nodes.map(node => {
+      position.set(...node.position); world.current?.localToWorld(position)
+      edge.copy(position).add(new Vector3(node.radius, 0, 0)).project(camera)
+      position.project(camera)
+      return { id: node.id, x: (position.x * 0.5 + 0.5) * size.width, y: (-position.y * 0.5 + 0.5) * size.height, radius: Math.abs(edge.x - position.x) * size.width * 0.5 }
+    }))
+    gl.domElement.dataset.sceneMode = toolsVisible ? 'studio' : 'immersive'
+    gl.domElement.dataset.playing = String(playing)
+    gl.domElement.dataset.projection = 'perspective'
+  })
+  return null
+}

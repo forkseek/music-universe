@@ -1,0 +1,92 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
+import { ArrowDownToLine, ArrowUpRight, Check, ChevronLeft, ChevronRight, CircleHelp, Compass, Crosshair, Disc3, Expand, Fingerprint, Orbit, Pause, Pencil, Play, RotateCcw, Shuffle, Sparkles, Tags, X } from 'lucide-react'
+import { formatDuration } from './data/albums'
+import { generateAlbumGalaxy, STYLE_LABELS } from './lib/generateAlbumGalaxy'
+import type { Album } from './lib/generateAlbumGalaxy'
+import GalaxyScene from './components/GalaxyScene'
+import AlbumEditor from './components/AlbumEditor'
+
+import HallConnection from './components/HallConnection'
+import { MUSIC_HALL_URL } from './lib/musicWorld'
+import { readExploration, rememberExploration } from './lib/explorationSession'
+import './hall-connection.css'
+
+export default function App() {
+  const [initial] = useState(readExploration)
+  const [album, setAlbum] = useState<Album>(initial.album)
+  const [seed, setSeed] = useState(initial.seed)
+  const [seedInput, setSeedInput] = useState(initial.seed)
+  useEffect(() => { rememberExploration({ album, seed }) }, [album, seed])
+  const [generation, setGeneration] = useState(0)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [playing, setPlaying] = useState(true)
+  const [showLabels, setShowLabels] = useState(true)
+  const [resetKey, setResetKey] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [showGuide, setShowGuide] = useState(false)
+  const [notice, setNotice] = useState('')
+  const [seedError, setSeedError] = useState('')
+  const viewport = useRef<HTMLDivElement>(null)
+  const indexStrip = useRef<HTMLDivElement>(null)
+  const galaxy = useMemo(() => generateAlbumGalaxy(seed, album.cover, album.tracks), [seed, album])
+  const selected = galaxy.planets.find((planet) => planet.id === selectedId)
+  const totalSeconds = album.tracks.reduce((sum, track) => sum + (track.duration ?? 0), 0)
+  const regenerate = (value: string) => {
+    if (!value.trim()) { setSeedError('请填写一个 Seed。'); return }
+    setSeedError(''); setSeed(value.trim()); setSeedInput(value.trim())
+    setGeneration((current) => current + 1); setResetKey((current) => current + 1)
+    setNotice(`星系已生成 · Seed ${value.trim()}`)
+  }
+  const randomize = () => {
+    const numbers = crypto.getRandomValues(new Uint32Array(1))
+    regenerate(`MU-${numbers[0].toString(36).toUpperCase()}`)
+  }
+  const exportGalaxy = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ album, galaxy }, null, 2)], { type: 'application/json' }))
+    const link = document.createElement('a')
+    link.href = url; link.download = `music-universe-${galaxy.numericSeed}.json`; link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+    setNotice('已导出专辑和星系数据')
+  }
+  const selectTrack = (id: string | null) => { setSelectedId(id); setNotice('') }
+  return <div className="app-shell">
+    <header className="site-header"><a className="brand" href="#universe" aria-label="Music Universe 首页"><span className="brand-mark"><Orbit size={27} strokeWidth={1.3} /></span><span>Music <b>Universe</b></span></a>
+      <nav aria-label="主导航"><a className="hall-nav-link" href={MUSIC_HALL_URL}><ChevronLeft size={14} /> 音乐大厅</a><a className="nav-active" href="#universe"><Compass size={15} /> 星系探索</a><button onClick={() => setEditing(true)}><Disc3 size={15} /> 专辑工坊</button><button onClick={() => setShowGuide(true)}><CircleHelp size={15} /> 使用指南</button></nav>
+      <div className="header-note"><a className="world-attribution" href={MUSIC_HALL_URL}><span><b>musicworld</b> / ROOM 002</span><span className="avatar">MW</span></a></div>
+    </header>
+    <main id="universe">
+      <div className="page-topline"><span><span className="tiny-star">✦</span> YOUR MUSIC, REIMAGINED</span><span>每张专辑，一片宇宙。<ArrowUpRight size={12} /></span></div>
+      <section className="album-heading"><div><div className="album-eyebrow"><span>ALBUM SOLAR SYSTEM</span><span className="eyebrow-line" /><span>VOL. 001</span></div><h1>{album.name}</h1><p><span>{album.artist}</span><span className="meta-dot">·</span>{album.year && <><span>{album.year}</span><span className="meta-dot">·</span></>}<span>{album.tracks.length} 首曲目</span>{totalSeconds > 0 && <><span className="meta-dot">·</span><span>{Math.floor(totalSeconds / 60)} 分 {totalSeconds % 60} 秒</span></>}</p></div><button className="secondary-button edit-album" onClick={() => setEditing(true)}><Pencil size={14} /> 编辑专辑</button></section>
+      <section className="universe-card" aria-label="专辑 3D 星系">
+        <div className="galaxy-viewport" ref={viewport} data-testid="galaxy-viewport">
+          <div className="nebula-field" /><div className="scene-vignette" />
+          <div className="scene-top"><div><span className="scene-live"><span className="live-dot" /> LIVE UNIVERSE</span><span className="scene-subtitle">FROM THE MUSIC HALL, INTO THE STARS.</span></div><span className="scene-coordinate">RA 20h 25m <span>/</span> DEC +01°</span></div>
+          <GalaxyScene galaxy={galaxy} album={album} selectedId={selectedId} onSelect={selectTrack} playing={playing} showLabels={showLabels} resetKey={resetKey} generation={generation} />
+          <div className="scene-bottom"><div className="scene-sector"><span>MU—001</span><span>THE ALBUM SYSTEM</span></div><span className="scene-instructions">拖动探索 <span>·</span> 滚轮缩放 <span>·</span> 点选星球</span><button className="icon-button fullscreen-button" aria-label="全屏查看星系" title="全屏" onClick={() => {
+            if (document.fullscreenElement) void document.exitFullscreen()
+            else void viewport.current?.requestFullscreen().catch(() => setNotice('当前浏览器暂不支持全屏。'))
+          }}><Expand size={17} /></button></div>
+          {selected && <div className="planet-detail" role="status"><div className="detail-number">{String(selected.index + 1).padStart(2, '0')}</div><div><span className="detail-eyebrow">TRACK PLANET · {STYLE_LABELS[selected.style]}</span><strong>{selected.title}</strong><span>{formatDuration(selected.duration)} <span className="meta-dot">·</span> {selected.moonCount} 颗卫星 {selected.hasRing && ' · 星环'}</span></div><button className="icon-button" aria-label="关闭星球详情" onClick={() => selectTrack(null)}><X size={16} /></button></div>}
+        </div>
+        <div className="control-bar"><form className="seed-controls" onSubmit={(event) => { event.preventDefault(); regenerate(seedInput) }}><label htmlFor="seed-input"><Fingerprint size={15} /><span>SEED</span></label><input id="seed-input" aria-label="星系 Seed" value={seedInput} maxLength={80} onChange={(event) => { setSeedInput(event.target.value); setSeedError('') }} spellCheck={false} /><button type="submit" className="icon-button regenerate-button" title="使用当前 Seed 重新生成" aria-label="重新生成"><RotateCcw size={16} /></button><button type="button" className="primary-button random-button" onClick={randomize}><Shuffle size={15} /> 随机生成</button></form>
+          <div className="view-controls"><button className={`tool-button ${!playing ? 'tool-active' : ''}`} onClick={() => setPlaying((value) => !value)} aria-label={playing ? '暂停动画' : '继续动画'}>{playing ? <Pause size={14} /> : <Play size={14} />}<span>{playing ? '巡航中' : '已暂停'}</span><span className={`status-dot ${playing ? 'playing' : ''}`} /></button><span className="control-divider" /><button className={`tool-button ${showLabels ? 'tool-active' : ''}`} onClick={() => setShowLabels((value) => !value)} aria-pressed={showLabels}><Tags size={15} /><span>标签</span></button><button className="tool-button" onClick={() => setResetKey((value) => value + 1)}><Crosshair size={16} /><span>重置视角</span></button><button className="icon-button export-button" aria-label="导出星系 JSON" title="导出星系数据" onClick={exportGalaxy}><ArrowDownToLine size={16} /></button></div>
+        </div>
+      </section>
+      <HallConnection />
+      <div className="generation-note" role="status">{seedError ? <span className="seed-error">{seedError}</span> : <><span>{notice ? <Check size={12} /> : <Sparkles size={12} />}{notice || '相同 Seed，相同星系。每一次随机，都有新的风景。'}</span><span className="generation-tag">10 种星球材质 <span>·</span> 曲序始终如一</span></>}</div>
+      <section className="track-index" aria-label="曲目星球索引"><div className="index-heading"><div><span className="eyebrow">THE CONSTELLATION</span><h2>沿着曲序，探索每颗星球。<span>{album.tracks.length.toString().padStart(2, '0')} PLANETS</span></h2></div><div className="index-arrows"><button className="icon-button" aria-label="曲目索引向左" onClick={() => indexStrip.current?.scrollBy({ left: -400, behavior: 'smooth' })}><ChevronLeft size={17} /></button><button className="icon-button" aria-label="曲目索引向右" onClick={() => indexStrip.current?.scrollBy({ left: 400, behavior: 'smooth' })}><ChevronRight size={17} /></button></div></div>
+        <div className="track-strip" ref={indexStrip}>{galaxy.planets.map((planet) => <button key={planet.id} className={`track-card ${selectedId === planet.id ? 'selected' : ''}`} onClick={() => selectTrack(planet.id)} aria-label={`查看 ${planet.title}`} aria-pressed={selectedId === planet.id}><span className="track-card-top"><span>{String(planet.index + 1).padStart(2, '0')}</span><span className="mini-planet" style={{ '--planet-color': planet.color, '--planet-secondary': planet.secondaryColor } as CSSProperties}>{planet.hasRing && <i />}</span><ArrowUpRight size={13} /></span><strong>{planet.title}</strong><span className="track-card-meta">{STYLE_LABELS[planet.style]} <span>·</span> {formatDuration(planet.duration)}</span></button>)}</div>
+      </section>
+    </main>
+    <footer><span><Orbit size={13} /> MUSIC UNIVERSE</span><span>让每一首歌，找到自己的轨道。</span><span>BUILT FOR THE LOVE OF MUSIC <span className="tiny-star">✦</span></span></footer>
+    {editing && <AlbumEditor album={album} onClose={() => setEditing(false)} onSave={(nextAlbum) => { setAlbum(nextAlbum); setSelectedId(null); setGeneration((value) => value + 1); setResetKey((value) => value + 1); setNotice('专辑已更新，你的新宇宙已点亮') }} />}
+    {showGuide && <Guide onClose={() => setShowGuide(false)} />}
+  </div>
+}
+
+function Guide({ onClose }: { onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null)
+  // The ref is available after the first commit; native dialog handles focus and Escape.
+  return <dialog ref={(element) => { dialog.current = element; if (element && !element.open) element.showModal() }} className="guide-dialog" onCancel={onClose} onClick={(event) => { if (event.target === dialog.current) onClose() }}><div className="guide-content"><div className="editor-head"><div><span className="eyebrow">WELCOME, EXPLORER</span><h2>你的音乐宇宙</h2></div><button className="icon-button" onClick={onClose} aria-label="关闭使用指南"><X size={19} /></button></div><p>左侧恒星以专辑封面为核心；右侧每颗星球对应一首歌，始终按曲序排列。</p><div className="guide-step"><span>01</span><div><strong>换一张专辑</strong><p>在专辑工坊中修改名称、歌手、封面与曲目。曲目每行一首，支持可选时长。</p></div></div><div className="guide-step"><span>02</span><div><strong>为宇宙选择一个 Seed</strong><p>随机生成会得到新 Seed；输入相同 Seed 并重新生成，可以复现相同的星球外观。</p></div></div><div className="guide-step"><span>03</span><div><strong>开始探索</strong><p>轻轻拖动旋转，滚轮缩放，点选星球查看详情。暂停可冻结星球与飞船，导出可保存全部星系数据。</p></div></div><button className="primary-button" onClick={onClose}>开始遨游 <ArrowUpRight size={15} /></button></div></dialog>
+}

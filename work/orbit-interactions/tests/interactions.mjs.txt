@@ -1,0 +1,184 @@
+import { chromium, expect } from '@playwright/test'
+import assert from 'node:assert/strict'
+import { readFile, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+
+const url = process.env.TEST_URL || 'http://127.0.0.1:5188/'
+const hall = process.env.MUSIC_WORLD_TEST_URL || 'http://127.0.0.1:3002/'
+const browser = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
+const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
+const output = path.resolve('..')
+const errors = [], checks = []
+function trackErrors(target) {
+  target.on('pageerror', error => errors.push(error.message))
+  target.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+}
+trackErrors(page)
+const state = (target = page) => target.locator('canvas').evaluate(element => ({ ...element.dataset }))
+async function ready(target = page) {
+  await target.locator('.scene-loading').waitFor({ state: 'detached', timeout: 45000 })
+  await expect(target.locator('canvas')).toHaveAttribute('data-view-mode', /overview|focus/)
+  await settle(target)
+}
+async function settle(target = page) {
+  await expect.poll(async () => (await state(target)).cameraMoving, { timeout: 12000 }).toBe('false')
+  await target.waitForTimeout(100)
+}
+async function point(id, target = page) { return JSON.parse((await state(target)).projectedTargets).find(item => item.id === id) }
+async function approach(id, target = page) {
+  const hit = await point(id, target)
+  await target.mouse.move(hit.x, hit.y)
+  await target.mouse.wheel(0, -500)
+  await expect(target.locator('canvas')).toHaveAttribute('data-view-mode', 'focus')
+  await expect(target.locator('canvas')).toHaveAttribute('data-focus-target', id)
+  await settle(target)
+}
+async function overview(target = page) {
+  await target.mouse.move(30, 30)
+  for (let index = 0; index < 5; index++) {
+    if ((await state(target)).viewMode === 'overview') break
+    await target.mouse.wheel(0, 500)
+    await target.waitForTimeout(180)
+  }
+  await expect(target.locator('canvas')).toHaveAttribute('data-view-mode', 'overview')
+  await settle(target)
+}
+async function exportData() {
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: '导出星系 JSON', exact: true }).click()
+  return JSON.parse(await readFile(await (await pending).path(), 'utf8'))
+}
+try {
+  await page.goto(url, { waitUntil: 'networkidle' })
+  await ready()
+  await expect(page.locator('.universe-hud')).toHaveAttribute('inert', '')
+  await expect(page.locator('.scene-label-layer')).toHaveCount(0)
+  assert.equal((await state()).sceneMode, 'immersive')
+  await page.evaluate(() => document.fonts.ready)
+  await page.screenshot({ path: path.join(output, 'music-universe-direct-overview.png') })
+  checks.push('Default page is a full-screen scene with hidden tools and labels')
+
+  const originalTargets = JSON.parse((await state()).projectedTargets)
+  const chosen = originalTargets[3]
+  await approach(chosen.id)
+  assert.ok((await point(chosen.id)).radius > chosen.radius * 4)
+  await page.screenshot({ path: path.join(output, 'music-universe-direct-focus.png') })
+  checks.push('Fresh wheel raycast selects the pointed planet and smoothly approaches a large close-up')
+
+  const beforeDrag = await state()
+  const close = await point(chosen.id)
+  await page.mouse.move(close.x, close.y)
+  await page.mouse.down()
+  await page.mouse.move(close.x + 160, close.y + 60, { steps: 10 })
+  await page.mouse.up()
+  const afterDrag = await state()
+  assert.ok(Number(afterDrag.surfaceYaw) >= .6)
+  assert.ok(Number(afterDrag.surfacePitch) > .05)
+  assert.ok(Math.abs(Number(afterDrag.cameraX) - Number(beforeDrag.cameraX)) < .02)
+  assert.ok(Math.abs(Number(afterDrag.cameraZ) - Number(beforeDrag.cameraZ)) < .02)
+  checks.push('Dragging changes the surface orientation while leaving the camera and planet position steady')
+
+  await page.keyboard.press('Space')
+  await expect(page.locator('canvas')).toHaveAttribute('data-playing', 'false')
+  await page.mouse.dblclick(close.x, close.y, { delay: 100 })
+  await expect(page.locator('canvas')).toHaveAttribute('data-playing', 'true')
+  await page.mouse.dblclick(close.x, close.y, { delay: 100 })
+  await expect(page.locator('canvas')).toHaveAttribute('data-playing', 'false')
+  await settle()
+  await expect.poll(async () => {
+    const first = await page.locator('.galaxy-viewport').screenshot()
+    await page.waitForTimeout(200)
+    return Buffer.compare(first, await page.locator('.galaxy-viewport').screenshot())
+  }, { timeout: 10000 }).toBe(0)
+  checks.push('Space and mouse double-click toggle scene animation, and paused close-up frames remain identical')
+
+  await overview()
+  const row = JSON.parse((await state()).projectedTargets).slice(1)
+  assert.ok(row.every((item, index) => index === 0 || item.x > row[index - 1].x))
+  await page.mouse.move(row[8].x, row[8].y)
+  await page.mouse.move(30, 30)
+  await page.mouse.wheel(0, -500)
+  await page.waitForTimeout(100)
+  await page.mouse.wheel(0, -500)
+  await expect(page.locator('canvas')).toHaveAttribute('data-view-mode', 'focus')
+  assert.equal((await state()).focusTarget, chosen.id)
+  await settle()
+  checks.push('Pulling back restores ordered overview; empty-space scrolling never reuses a stale hover target')
+
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('canvas')).toHaveAttribute('data-focus-target', row[3].id)
+  await settle()
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.locator('canvas')).toHaveAttribute('data-focus-target', chosen.id)
+  await settle()
+  checks.push('Left / right keys travel between tracks in the original track order')
+
+  await page.keyboard.press('h')
+  await expect(page.locator('.universe-hud')).not.toHaveAttribute('inert', '')
+  const beforeTools = await exportData()
+  await page.getByRole('textbox', { name: '星系 Seed', exact: true }).focus()
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('Space')
+  assert.equal((await state()).focusTarget, chosen.id)
+  assert.equal((await state()).playing, 'false')
+  await page.getByRole('button', { name: '编辑专辑', exact: true }).click()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.editor-dialog')).toHaveCount(0)
+  assert.ok(page.url().startsWith(url))
+  await page.getByRole('button', { name: '曲目索引', exact: true }).click()
+  await page.getByRole('button', { name: '查看 Tell Me What It Is', exact: true }).click()
+  await expect(page.locator('canvas')).toHaveAttribute('data-focus-target', row[9].id)
+  await settle()
+  await page.keyboard.press('h')
+  await page.locator('canvas').focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('canvas')).toHaveAttribute('data-focus-target', row[0].id)
+  await settle()
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.locator('canvas')).toHaveAttribute('data-focus-target', row[9].id)
+  await settle()
+  await page.keyboard.press('h')
+  assert.deepEqual(await exportData(), beforeTools)
+  checks.push('Tool input and dialog keys remain native; track skipping wraps and gestures preserve exported seeded data')
+
+  await page.keyboard.press('h')
+  await page.keyboard.press('Escape')
+  await page.waitForURL(new URL('#hall', hall).href)
+  await expect(page.locator('.mw-hall-ready')).toBeVisible({ timeout: 30000 })
+  checks.push('Escape in the pure scene returns to the real Music World hall')
+
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 })
+  const mobile = await context.newPage()
+  trackErrors(mobile)
+  await mobile.goto(url, { waitUntil: 'networkidle' })
+  await ready(mobile)
+  await approach('@album-star', mobile)
+  const star = await point('@album-star', mobile)
+  const session = await context.newCDPSession(mobile)
+  const tap = async () => {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: star.x, y: star.y, id: 1 }] })
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  }
+  await tap(); await mobile.waitForTimeout(100); await tap()
+  await mobile.waitForTimeout(450)
+  await tap(); await mobile.waitForTimeout(100); await tap()
+  await expect(mobile.locator('canvas')).toHaveAttribute('data-playing', 'false')
+  const zoomBefore = Number((await state(mobile)).zoom)
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: star.x - 30, y: star.y, id: 1 }, { x: star.x + 30, y: star.y, id: 2 }] })
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: star.x - 42, y: star.y, id: 1 }, { x: star.x + 42, y: star.y, id: 2 }] })
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  await expect.poll(async () => Number((await state(mobile)).zoom)).toBeLessThan(zoomBefore)
+  await settle(mobile)
+  await mobile.screenshot({ path: path.join(output, 'music-universe-direct-mobile.png') })
+  assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight), false)
+  checks.push('Real touch input supports double-tap and pinch zoom without triggering duplicate playback or page overflow')
+  await context.close()
+
+  assert.deepEqual(errors, [])
+  await writeFile(path.join(output, 'music-universe-interaction-report.json'), JSON.stringify({ url, passed: true, checks, errors }, null, 2))
+  console.log(JSON.stringify({ passed: true, checks, errors }, null, 2))
+} catch (error) {
+  await page.screenshot({ path: path.join(output, 'music-universe-interaction-failure.png') }).catch(() => {})
+  await writeFile(path.join(output, 'music-universe-interaction-report.json'), JSON.stringify({ url, passed: false, checks, errors, failure: String(error) }, null, 2))
+  throw error
+} finally { await browser.close() }

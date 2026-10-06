@@ -1,0 +1,33 @@
+export function CameraDirector({ galaxy, navigation, world, onReady }: { galaxy: AlbumGalaxy; navigation: GalaxyNavigation; world: WorldRef; onReady: () => void }) {
+  const { camera, size, gl, invalidate } = useThree()
+  const framing = useMemo(() => getGalaxyFraming(size.width, size.height, galaxy.planets.length), [size.width, size.height, galaxy.planets.length])
+  const reduced = useMemo(() => matchMedia('(prefers-reduced-motion: reduce)').matches, [])
+  const smooth = useMemo(() => ({ position: new Vector3(), desired: new Vector3(), aim: new Vector3(), initialized: false, frames: 0 }), [])
+  useEffect(() => { onReady(); invalidate() }, [onReady, invalidate])
+  useEffect(() => { invalidate() }, [navigation.view, framing, invalidate])
+  useFrame((_, delta) => {
+    const view = navigation.viewRef.current
+    smooth.desired.set(view.center[0], view.center[1], framing.distance * view.zoom)
+    if (!smooth.initialized) { smooth.position.copy(smooth.desired); smooth.initialized = true }
+    const ease = 1 - Math.exp(-Math.min(delta, 0.12) * (reduced ? 24 : 14))
+    smooth.position.lerp(smooth.desired, ease)
+    const moving = smooth.position.distanceTo(smooth.desired) > 0.00005
+    if (!moving) smooth.position.copy(smooth.desired)
+    camera.position.copy(smooth.position)
+    // Parallel aim and camera movement keep the horizontal layout and cursor anchor steady.
+    smooth.aim.set(smooth.position.x, smooth.position.y, 0)
+    camera.lookAt(smooth.aim)
+    camera.updateMatrixWorld()
+    gl.domElement.dataset.viewMode = 'continuous'
+    gl.domElement.dataset.focusTarget = view.target
+    gl.domElement.dataset.zoom = view.zoom.toFixed(6)
+    gl.domElement.dataset.renderedZoom = (camera.position.z / framing.distance).toFixed(6)
+    gl.domElement.dataset.cameraX = camera.position.x.toFixed(6)
+    gl.domElement.dataset.cameraY = camera.position.y.toFixed(6)
+    gl.domElement.dataset.cameraZ = camera.position.z.toFixed(6)
+    gl.domElement.dataset.cameraMoving = String(moving)
+    gl.domElement.dataset.frameCount = String(++smooth.frames)
+    if (moving) invalidate()
+  }, -0.5)
+  return null
+}

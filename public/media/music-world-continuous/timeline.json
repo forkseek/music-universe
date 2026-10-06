@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "fps": 60,
+  "frameCount": 801,
+  "width": 1344,
+  "height": 768,
+  "duration": 13.333333333333334,
+  "pattern": "/media/music-world-continuous/frames/frame-{index}.webp",
+  "digits": 5,
+  "movie": "/media/music-world-continuous.mp4",
+  "sources": [
+    "music_world_3shots_60fps_final.mp4"
+  ],
+  "interpolation": "provided-60fps",
+  "duplicateBoundaryFramesRemoved": 0
+}

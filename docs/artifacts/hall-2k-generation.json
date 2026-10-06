@@ -1,0 +1,17 @@
+{
+  "mode": "built-in image_gen.imagegen",
+  "reference": "public/media/music-world-continuous/frames/frame-00800.webp",
+  "prompt": "Edit target: the supplied final frame of the Music World animation. Produce ONE enhanced high resolution scene plate at exactly 2688 by 1536 pixels, keeping the original 7:4 aspect ratio. This is a registered continuation frame for a web animation: preserve the entire composition, all positions, framing, camera, shapes, scale, lighting and color temperature as precisely as possible. The music note center remains at x=43%, y=43%; record x=31%,y=22%; microphone x=25%,y=39%; guitar x=53%,y=19%; heart x=60%,y=36%; piano x=58%,y=53%; headphones x=30%,y=58%. The exact SAME cheerful small cream and orange robot stands on the RIGHT, with the SAME raised left hand pose, backpack, smiling face and orange antenna bulb, same body proportions and silhouette. Improve fine edges, material textures, soft warm light and reflection definition for a 2K quality stationary web scene. Do not redraw or replace the robot, change its expression, move the hand, enlarge objects or add any objects. Retain a soft cinematic comfortable appearance; avoid artificial sharpened halos, jagged edges, extra sparkling particles or overly bright highlights. No UI, no labels, no text, no border. Preserve the original scene throughout; only upgrade image quality and detail.",
+  "sourceAsset": "docs/artifacts/hall-enhanced-source.png",
+  "generatedSourceDimensions": [
+    1659,
+    948
+  ],
+  "webAsset": "public/media/scene-hall-2k.webp",
+  "webDimensions": [
+    2688,
+    1536
+  ],
+  "export": "Sharp, Lanczos3 resize, WebP quality 94, effort 6",
+  "note": "AI-enhanced source plus upscale; not a native 2K source movie."
+}

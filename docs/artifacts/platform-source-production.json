@@ -1,0 +1,17 @@
+{
+  "origin": "http://127.0.0.1:3000",
+  "records": 5,
+  "uniqueTracks": 1,
+  "savedSources": 5,
+  "sourceKinds": [
+    "qishui",
+    "kugou",
+    "qqmusic",
+    "spotify",
+    "netease"
+  ],
+  "importedVia": "file",
+  "survivedRefresh": true,
+  "worldTracks": 1,
+  "accountAPIsCalled": false
+}
