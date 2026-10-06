@@ -1,5 +1,5 @@
 import {readFile,writeFile,copyFile} from 'node:fs/promises';
-const root='C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe';
+const root='C:/path/to/music-universe';
 let app=await readFile(root+'/src/App.tsx','utf8');
 const old='      setAlbum(value.album)\n      setGeneration(current => current + 1)';
 if(!app.includes(old)) throw new Error('Expected automatic adoption source missing');

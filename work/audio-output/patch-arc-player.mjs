@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs'
-const file='C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe/src/components/PlayerBar.tsx'
+const file='C:/path/to/music-universe/src/components/PlayerBar.tsx'
 const original=readFileSync(file,'utf8')
 let source=original.replace(/\r\n/g,'\n')
 const change=(before,after)=>{if(!source.includes(before))throw new Error('Arc player changed: '+before.slice(0,60));source=source.replace(before,after)}

@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises'
 
-const file = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe/tests/camera.mjs'
+const file = 'C:/path/to/music-universe/tests/camera.mjs'
 let source = (await readFile(file, 'utf8')).replaceAll('\r\n', '\n')
 const before = `  assert.equal((await state()).cameraMoving, 'false')
   await pause()

@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const main = process.cwd(), folder = path.join(main, 'work/universe-polish');
-const universe = path.resolve(process.env.MUSIC_UNIVERSE_SOURCE || path.join(main, '../../Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'));
+const universe = path.resolve(process.env.MUSIC_UNIVERSE_SOURCE || path.join(main, '../../music-universe'));
 const roots = { main, universe };
 const added = {
   main: ['scripts/sync-universe.mjs', 'src/app/album-universe.css', 'src/components/home/AlbumUniverseRoom.tsx', 'src/lib/music/providers/qq-oauth.ts', 'src/app/api/qq/login/callback/route.ts', 'src/app/api/qq/login/complete/route.ts', 'src/app/api/qq/avatar/route.ts'],

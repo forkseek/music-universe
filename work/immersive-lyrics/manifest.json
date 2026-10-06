@@ -1,6 +1,6 @@
 {
   "universe": {
-    "root": "C:\\Users\\IKUN\\Documents\\Codex\\2026-10-04\\referenced-chatgpt-conversation-this-is-an-3\\outputs\\music-universe",
+    "root": "C:\\path\\to\\music-universe",
     "changes": [
       {
         "file": "IMMERSIVE_LYRICS.md",
@@ -69,7 +69,7 @@
     ]
   },
   "main": {
-    "root": "C:\\Users\\IKUN\\Documents\\ChatGPT\\腾讯黑客松",
+    "root": "C:\\path\\to\\music-world",
     "changes": [
       {
         "file": "integrations/mineradio/worker.cjs",

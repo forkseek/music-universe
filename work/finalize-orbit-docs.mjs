@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 
-const root = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const root = 'C:/path/to/music-universe'
 const path = `${root}/README.md`
 let source = fs.readFileSync(path, 'utf8')
 source = source.replace('点选星球可查看曲目详情，并切换上一首 / 下一首。', '显示工具后点选星球可查看曲目详情，并切换上一首 / 下一首。')

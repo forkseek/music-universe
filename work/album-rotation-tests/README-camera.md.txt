@@ -7,7 +7,7 @@ React + TypeScript + Vite + React Three Fiber / Three.js 专辑星系生成器�
 需要 Node.js 22.12+；开发环境为 Node.js 24.18，依赖已安装。
 
 ```powershell
-cd "C:\Users\IKUN\Documents\Codex\2026-10-04\referenced-chatgpt-conversation-this-is-an-3\outputs\music-universe"
+cd "C:\path\to\music-universe"
 npm ci
 npm run dev
 ```

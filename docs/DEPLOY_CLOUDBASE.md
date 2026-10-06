@@ -79,7 +79,7 @@ npx --package @cloudbase/cli@3.8.5 tcb cloudrun deploy ^
 
 ## 4. 关于 `npm run build` 里的 universe 同步
 
-`build` 会先跑 `scripts/sync-universe.mjs`，它的默认源路径写死了本机的 `../../Codex/2026-10-04/.../music-universe`，**在云构建容器里不存在**。
+`build` 会先跑 `scripts/sync-universe.mjs`，它的默认源路径写死了本机的 `../../music-universe`，**在云构建容器里不存在**。
 
 已验证的兜底行为：只要 `public/universe/index.html` 与 `public/universe/build-manifest.json` 随源码一起上传，脚本会打印
 

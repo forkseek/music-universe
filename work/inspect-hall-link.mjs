@@ -1,8 +1,8 @@
 import { chromium } from '@playwright/test'
 import { writeFile } from 'node:fs/promises'
 
-const output = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an/outputs/music-universe/previews/'
-const browser = await chromium.launch({ executablePath: 'C:/Users/IKUN/AppData/Local/ms-playwright/chromium-1243/chrome-win64/chrome.exe', headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
+const output = 'C:/path/to/music-universe/previews/'
+const browser = await chromium.launch({ executablePath: 'C:/path/to/ms-playwright/chromium-1243/chrome-win64/chrome.exe', headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
 try {
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
   const errors = []

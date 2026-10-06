@@ -208,7 +208,7 @@
 +在项目目录运行：
 +
 +```powershell
-+cd 'C:\Users\IKUN\Documents\Codex\2026-10-04\referenced-chatgpt-conversation-this-is-an-3\outputs\music-universe'
++cd 'C:\path\to\music-universe'
 +npm test
 +npm run build
 +npm run test:experience
@@ -228,9 +228,9 @@
 +生产子页面同步及测试：
 +
 +```powershell
-+cd 'C:\Users\IKUN\Documents\ChatGPT\腾讯黑客松'
++cd 'C:\path\to\music-world'
 +npm run build:universe
-+cd 'C:\Users\IKUN\Documents\Codex\2026-10-04\referenced-chatgpt-conversation-this-is-an-3\outputs\music-universe'
++cd 'C:\path\to\music-universe'
 +$env:UNIVERSE_TEST_URL = 'http://127.0.0.1:3002/universe/index.html'
 +npm run test:experience
 +Remove-Item Env:UNIVERSE_TEST_URL
@@ -242,7 +242,7 @@
 +
 +## 回滚及风险
 +
-+既有源码变更前备份在 `C:\Users\IKUN\Documents\ChatGPT\腾讯黑客松\work\universe-enhancements\backup\universe\`。工作区另保存 scoped.patch，便于逐文件查看，不覆盖其他既有改动。回滚先按 patch 还原本次文件，再重新 build:universe 同步子页面。
++既有源码变更前备份在 `C:\path\to\music-world\work\universe-enhancements\backup\universe\`。工作区另保存 scoped.patch，便于逐文件查看，不覆盖其他既有改动。回滚先按 patch 还原本次文件，再重新 build:universe 同步子页面。
 +
 +Safari/受保护或跨域媒体可能不支持捕获，音频仍原生播放，联动降级。新 Context 仅分析，不承诺自动获得第三方权限。实体扬声器和真实设备 FPS 需要人工验收；浏览器中播放进度与波形采样证明代码路径，不等同于实体听音。初始镜头接近在极窄长屏或超大专辑可能裁切部分外轨，可把 INITIAL_FRAMING_SCALE 调回 1。
 +

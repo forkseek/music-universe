@@ -11,4 +11,4 @@ npm run dev -- --port 3002
 
 QQ 身份登录使用自己注册的 QQ 互联应用。填写服务端 `QQ_CONNECT_APP_ID`、`QQ_CONNECT_APP_SECRET`、`QQ_CONNECT_REDIRECT_URI` 与匹配的 `APP_ORIGIN`，回调路径为 `/api/qq/login/callback`。本地当前没有这些配置，真实扫码没有验收。该授权只获取账号身份，不授予 QQ 音乐歌曲播放权限。
 
-改动分析、配置参数、运行方法、验证证据和回滚说明见[完整报告](C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe/INTEGRATION_POLISH.md)。
+改动分析、配置参数、运行方法、验证证据和回滚说明见[完整报告](C:/path/to/music-universe/INTEGRATION_POLISH.md)。

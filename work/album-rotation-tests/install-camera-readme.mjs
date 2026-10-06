@@ -1,6 +1,6 @@
 import { copyFile, readFile } from 'node:fs/promises'
 
-const target = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe/README.md'
+const target = 'C:/path/to/music-universe/README.md'
 const source = new URL('./README-camera.md.txt', import.meta.url)
 await copyFile(source, target)
 const content = await readFile(target, 'utf8')

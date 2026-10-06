@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-const root = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const root = 'C:/path/to/music-universe'
 for (const [stage, dest] of [['galaxyNavigation.ts', 'src/lib/galaxyNavigation.ts'], ['useGalaxyNavigation.ts', 'src/hooks/useGalaxyNavigation.ts']]) {
   fs.copyFileSync(`work/continuous-zoom/${stage}.txt`, `${root}/${dest}`)
 }

@@ -27,7 +27,7 @@
 
 ## 2. 具体代码修改
 
-所有路径相对于本项目目录 `C:\Users\IKUN\Documents\Codex\2026-10-04\referenced-chatgpt-conversation-this-is-an-3\outputs\music-universe`。
+所有路径相对于本项目目录 `C:\path\to\music-universe`。
 
 | 文件 | 修改 |
 | --- | --- |

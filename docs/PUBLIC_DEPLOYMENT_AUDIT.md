@@ -57,7 +57,7 @@ flowchart LR
 在 Windows PowerShell：
 
 ```powershell
-Set-Location -LiteralPath 'C:\Users\IKUN\Documents\ChatGPT\腾讯黑客松'
+Set-Location -LiteralPath 'C:\path\to\music-world'
 npm run check
 npm run build:universe
 node work/public-deployment/export-source.mjs

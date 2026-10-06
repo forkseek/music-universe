@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs'
-const file = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe/tests/browser.mjs'
+const file = 'C:/path/to/music-universe/tests/browser.mjs'
 const source = readFileSync(file, 'utf8')
 const previous = `  // Let framing settle after full-page capture before comparing frozen frames.
   await page.waitForTimeout(350)

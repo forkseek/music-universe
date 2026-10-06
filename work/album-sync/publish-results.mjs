@@ -1,5 +1,5 @@
 import {readFile,writeFile,copyFile} from 'node:fs/promises';
-const root='C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe';
+const root='C:/path/to/music-universe';
 const sanitize=value=>JSON.parse(JSON.stringify(value,(key,item)=>['src','url','playbackId','cookie','ticket'].includes(key)?undefined:item));
 const browser=sanitize(JSON.parse(await readFile('work/album-sync/review/results.json','utf8')));
 const localTags=sanitize(JSON.parse(await readFile('work/album-sync/review/local-tags.json','utf8')));

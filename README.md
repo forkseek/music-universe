@@ -7,7 +7,7 @@
 需要 **Node.js 24.x**（本机验证版本 24.18.0）和 npm。本项目没有必填密钥，也不需要先启动数据库。
 
 ```powershell
-cd "C:\Users\IKUN\Documents\ChatGPT\腾讯黑客松"
+cd "C:\path\to\music-world"
 npm install
 npm run dev
 ```
@@ -34,7 +34,7 @@ npm run dev
 
 大厅 `/#hall` 的 **专辑宇宙** 轨道标记连接到独立运行的 Hybrid 3D 音乐宇宙 `http://127.0.0.1:5173/?from=hall`。默认全屏显示横向专辑星球与细轨道，不显示导航、标题或播放器。指向星球向上滚轮即可靠近，双击播放对应音乐并出现光环、环绕星尘；再次双击暂停。按 `Esc` 返回 `http://127.0.0.1:3002/?from=universe#hall`。原有七个大厅模块仍正常使用；宇宙完整素材工作台通过 `/?studio=1` 打开。
 
-宇宙源码位于 `C:\Users\IKUN\Documents\Codex\2026-10-04\referenced-chatgpt-conversation-this-is-an\outputs\music-universe`。这两个入口需要两边服务同时运行；大厅使用 `3002` 时，可先在本项目终端设置 `$env:PORT='3002'` 与 `$env:APP_ORIGIN='http://127.0.0.1:3002'`，再执行 `npm run build`、`npm start`。大厅的这一场景地址由 `NEXT_PUBLIC_MUSIC_UNIVERSE_ROOM_URL` 配置；更改后重新构建。
+宇宙源码位于 `C:\path\to\music-universe`。这两个入口需要两边服务同时运行；大厅使用 `3002` 时，可先在本项目终端设置 `$env:PORT='3002'` 与 `$env:APP_ORIGIN='http://127.0.0.1:3002'`，再执行 `npm run build`、`npm start`。大厅的这一场景地址由 `NEXT_PUBLIC_MUSIC_UNIVERSE_ROOM_URL` 配置；更改后重新构建。
 
 ## 验证命令
 
@@ -51,6 +51,67 @@ npm run db:generate     # 根据 Drizzle schema 生成迁移 SQL，不连接/修
 ```
 
 重现锁定依赖可使用 `npm ci`。自动化测试使用独立临时库，不清理真实用户数据库。部署需单个 Node.js 实例及可持久保存的本地磁盘；提供 Dockerfile、Compose 命名卷和 [部署说明](docs/DEPLOYMENT.md)。目前已验证本机独立生产包及跨进程重启，尚未部署云端或运行 Docker。
+
+## 部署
+
+持久层是单文件 SQLite，因此只能**单实例**运行，并把数据库放在**可持久保存的本地磁盘**上；不要部署到只有临时文件系统的函数平台，也不要把同一个库分散到多台服务器的本地磁盘。完整说明见 [部署说明](docs/DEPLOYMENT.md) 与 [CloudBase 云托管部署](docs/DEPLOY_CLOUDBASE.md)。
+
+### 方式一：单台 Node.js
+
+```powershell
+npm ci
+npm run build
+npm start
+```
+
+- 需 Node.js 24.x；以固定服务用户运行，并给数据库父目录写权限。
+- `DATABASE_PATH` 指向发布目录之外的固定绝对路径，例如 `/var/lib/music-world/music-world.db`（迁移文件与 WAL 文件同样需要写权限）。
+- `APP_ORIGIN` 设为实际入口，如 `https://music.example.com`，不带尾斜杠；服务置于 HTTPS 反向代理之后。
+- 精简发布：把 `.next/standalone/`、`public/`、`.next/static/` 复制到同一目录（分别作为发布根、`public/`、`.next/static/`），在该目录执行 `node server.js`。
+- 可选自检：`npm run storage:check`（验证目标目录可写、启用 WAL 并可重新打开），`npm run db:init`（手动应用迁移并检查完整性）。
+
+### 方式二：Docker / Compose
+
+```sh
+docker compose up --build -d
+docker compose exec music-world node scripts/storage-check.mjs
+```
+
+默认只绑定宿主机 `127.0.0.1:3000`，数据库落在命名卷 `music-world-data`（容器内 `/app/data/music-world.db`）。公开服务时通过 `APP_ORIGIN` 与反向代理暴露；命名卷的数据生命周期独立于容器，请勿执行会删除卷的清理命令。
+
+### 方式三：腾讯云 CloudBase 云托管
+
+目标形式是单副本 + CFS 挂载，并**必须**把 `SQLITE_JOURNAL_MODE` 设为 `DELETE`——WAL 依赖 `-shm` 共享内存与可靠的文件锁，在 CFS 这类网络文件系统上会导致数据库损坏。
+
+```sh
+npx --package @cloudbase/cli@3.8.5 tcb login
+npx --package @cloudbase/cli@3.8.5 tcb cloudrun deploy --env-id <envId> --service-name music-world --source . --port 3000 --min-num 1 --max-num 1 --open-access-types PUBLIC --wait
+```
+
+`--min-num 1 --max-num 1` 必须写死，禁止自动扩缩容。仓库根目录另提供 `cloudbaserc.json`（声明式写法，尚未实测）。逐参数说明与验收清单见 [CloudBase 云托管部署](docs/DEPLOY_CLOUDBASE.md)。
+
+### 关键环境变量
+
+| 变量 | 用途 | 生产取值 |
+| --- | --- | --- |
+| `DATABASE_PATH` | SQLite 文件位置 | 持久磁盘上的绝对路径，如 `/app/data/music-world.db` |
+| `APP_ORIGIN` | 源站守卫与 Cookie `secure` 判定 | `https://<公网域名>`，不带尾斜杠 |
+| `SQLITE_JOURNAL_MODE` | SQLite journal 模式 | 网络文件系统（CFS/NFS）用 `DELETE`；本地磁盘用默认 `WAL` |
+| `MUSIC_DESKTOP_LOGIN` | 本机 Electron 登录窗口 | 远程部署设为 `0` |
+| `NEXT_PUBLIC_ENABLE_QQMUSIC` | QQ 能力开关 | 默认 `false`，仅在已授权的 H5 面板内启用 |
+| `MUSIC_CREDENTIAL_SECRET` | 凭证加密密钥（仅服务端） | 生产显式配置；留空则在 `DATABASE_PATH` 旁生成 |
+
+其余可选变量见 [.env.example](.env.example)；`AI_*` 与 `QQ_CONNECT_*` 未配置时程序仍可正常运行。
+
+### 上线前检查
+
+```sh
+curl -I https://<公网域名>/
+curl https://<公网域名>/api/health
+curl -I https://<公网域名>/universe/index.html
+```
+
+浏览器中再确认：进入音乐大厅 → `#universe` 能加载 3D 场景 → 载入 Demo 并保存世界 → **重启服务**后重新打开同一个世界，数据仍在（验证持久卷已生效）。发布新版本前先用 SQLite 在线备份机制，或停机后备份整个数据目录；不要在 WAL 写入过程中只复制主 `.db` 文件。
 
 ## 文件格式
 

@@ -31,7 +31,7 @@ src/App.tsx                        接入回调、更新恒星与高亮星球
 tests/automaticAlbum.test.ts        缓存、曲序、竞态、失败保留场景等验证
 ```
 
-Music World 后端目录（当前工作区 `C:\Users\IKUN\Documents\ChatGPT\腾讯黑客松`）：
+Music World 后端目录（当前工作区 `C:\path\to\music-world`）：
 
 ```text
 src/app/api/music/album/route.ts            统一专辑识别入口

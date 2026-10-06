@@ -6,7 +6,7 @@ import path from 'node:path'
 
 const universe = 'http://127.0.0.1:5188/'
 const hall = 'http://127.0.0.1:3002/'
-const output = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs'
+const output = 'C:/path/to/universe-workspace'
 const candidate = chromium.executablePath()
 const browser = await chromium.launch({ headless: true, executablePath: existsSync(candidate) ? candidate : 'C:/Program Files/Google/Chrome/Application/chrome.exe', args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
 const page = await browser.newPage({ viewport: { width: 1600, height: 1100 }, deviceScaleFactor: 1 })

@@ -1,6 +1,6 @@
 import { readFile, writeFile, copyFile } from 'node:fs/promises'
 import path from 'node:path'
-const root = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const root = 'C:/path/to/music-universe'
 const stage = path.resolve('work/space-camera')
 const read = file => readFile(path.join(root, file), 'utf8')
 const write = (file, text) => writeFile(path.join(root, file), text, 'utf8')

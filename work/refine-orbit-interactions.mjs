@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-const app = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const app = 'C:/path/to/music-universe'
 const scene = app + '/src/components/SceneInteraction.tsx'
 let source = await fs.readFile(scene,'utf8')
 source = source.replace("import type { Group, Mesh }", "import type { Group }")

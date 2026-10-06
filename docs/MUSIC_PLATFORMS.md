@@ -68,7 +68,7 @@ QQ 继续使用当前项目已有的 musicu 搜索与账号音源适配器，新
 Music World 服务：
 
 ```powershell
-Set-Location -LiteralPath 'C:\Users\IKUN\Documents\ChatGPT\腾讯黑客松'
+Set-Location -LiteralPath 'C:\path\to\music-world'
 npm install
 node node_modules/electron/install.js
 npm run build
@@ -79,7 +79,7 @@ npm start
 在另一个终端启动星系：
 
 ```powershell
-Set-Location -LiteralPath 'C:\Users\IKUN\Documents\Codex\2026-10-04\referenced-chatgpt-conversation-this-is-an-3\outputs\music-universe'
+Set-Location -LiteralPath 'C:\path\to\music-universe'
 npm install
 npm run dev -- --host 127.0.0.1 --port 5188 --strictPort
 ```

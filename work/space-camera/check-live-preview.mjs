@@ -1,7 +1,7 @@
 import { chromium, expect } from '@playwright/test'
 import assert from 'node:assert/strict'
 import { writeFile } from 'node:fs/promises'
-const outputs='C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs'
+const outputs='C:/path/to/universe-workspace'
 const browser=await chromium.launch({headless:true,args:['--use-angle=swiftshader','--enable-unsafe-swiftshader']})
 const errors=[]
 try{

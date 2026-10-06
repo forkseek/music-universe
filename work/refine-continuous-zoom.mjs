@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-const root = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const root = 'C:/path/to/music-universe'
 const path = `${root}/src/components/SceneInteraction.tsx`
 let source = fs.readFileSync(path, 'utf8')
 source = source.replace("import type { GalaxyNavigation }", "import { ALBUM_TARGET } from '../lib/galaxyNavigation'\nimport type { GalaxyNavigation }")

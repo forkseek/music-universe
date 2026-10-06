@@ -63,7 +63,7 @@
 +npm test
 +npm run test:lyrics
 +
-+# 主站目录 C:\Users\IKUN\Documents\ChatGPT\腾讯黑客松
++# 主站目录 C:\path\to\music-world
 +npm run check
 +npm run build:universe
 +npm run dev -- --port 3002

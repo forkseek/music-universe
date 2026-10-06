@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-const output = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs'
+const output = 'C:/path/to/universe-workspace'
 const interfaceReport = JSON.parse(fs.readFileSync(`${output}/music-universe-browser-report.json`, 'utf8'))
 const zoomReport = JSON.parse(fs.readFileSync(`${output}/music-universe-interaction-report.json`, 'utf8'))
 if (!interfaceReport.passed || !zoomReport.passed || zoomReport.url !== 'http://127.0.0.1:4188/' || interfaceReport.errors.length || zoomReport.errors.length) throw new Error('Validation incomplete.')

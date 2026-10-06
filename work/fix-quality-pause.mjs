@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-const app = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const app = 'C:/path/to/music-universe'
 const sceneFile = app + '/src/components/GalaxyScene.tsx'
 let scene = await fs.readFile(sceneFile, 'utf8')
 scene = scene.replace('function RenderQualityController({ quality }: { quality: RenderQuality })', 'function RenderQualityController({ quality, playing }: { quality: RenderQuality; playing: boolean })')

@@ -1,6 +1,6 @@
 import {readFile,writeFile} from 'node:fs/promises'
 import path from 'node:path'
-const root='C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const root='C:/path/to/music-universe'
 const reports=['browser','interaction','rotation','camera']
 const results=[]
 for(const name of reports){

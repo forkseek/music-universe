@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-const root = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const root = 'C:/path/to/music-universe'
 const physicsPath = `${root}/src/lib/albumRotationPhysics.ts`
 let source = fs.readFileSync(physicsPath, 'utf8')
 source = source.replace('  angles: { yaw: number; pitch: number }', '  angles: { yaw: number; pitch: number }\n  elapsed: number')

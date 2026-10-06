@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, cpSync, existsSync } from 'node
 import path from 'node:path'
 
 const root = process.cwd()
-const universe = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const universe = 'C:/path/to/music-universe'
 if (!existsSync(path.join(universe, 'src/App.tsx'))) throw new Error('Existing universe project is required')
 function replace(file, original, next) {
   const source = readFileSync(file, 'utf8')

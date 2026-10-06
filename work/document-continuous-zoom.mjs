@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-const root = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const root = 'C:/path/to/music-universe'
 const app = `${root}/src/App.tsx`
 let source = fs.readFileSync(app, 'utf8')
 source = source.replace('在总览中指向星球向上滚动，镜头会平滑靠近它。近景拖动只旋转球体；向下滚动回到总览。手机支持双击和双指缩放。', '滚轮或双指开合连续放大缩小，镜头平滑追随操作，可随时停下或反向。指针所在位置是缩放中心，拖动星球只旋转球体。')

@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-const app = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const app = 'C:/path/to/music-universe'
 const navFile = app + '/src/hooks/useGalaxyNavigation.ts'
 let nav = await fs.readFile(navFile,'utf8')
 nav = nav.replace('    if (current.transitioning) return\n    update({ ...current, mode:', '    if (current.transitioning || (current.mode === \'focus\' && current.target === target && current.zoom === 1)) {\n      if (current.target === target) onFocusRef.current(target)\n      return\n    }\n    update({ ...current, mode:')

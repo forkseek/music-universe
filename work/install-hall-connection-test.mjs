@@ -1,10 +1,10 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-const universe = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const universe = 'C:/path/to/music-universe'
 let test = readFileSync('work/hall-connection-check.mjs', 'utf8')
 test = test.replace("const universe = 'http://127.0.0.1:5188/'", "const universe = new URL(process.env.TEST_URL || 'http://127.0.0.1:5188/').href")
 test = test.replace("const hall = 'http://127.0.0.1:3002/'", "const hall = new URL(process.env.MUSIC_WORLD_TEST_URL || 'http://127.0.0.1:3002/').href")
-test = test.replace("const output = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs'", "const output = path.resolve('..')")
+test = test.replace("const output = 'C:/path/to/universe-workspace'", "const output = path.resolve('..')")
 test = test.replace('const candidate = chromium.executablePath()', 'const candidate = process.env.BROWSER_EXECUTABLE || chromium.executablePath()')
 test = test.replace('  for (const width of [390, 360]) {', `  await page.getByRole('button', { name: '编辑专辑', exact: true }).click()
   await page.getByRole('button', { name: '恢复示例', exact: true }).click()

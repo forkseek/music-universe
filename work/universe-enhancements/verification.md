@@ -1,6 +1,6 @@
 # 音乐宇宙增强及解除跟随验证
 
-日期：2026-10-06。源码位于 `C:\Users\IKUN\Documents\Codex\2026-10-04\referenced-chatgpt-conversation-this-is-an-3\outputs\music-universe`。开发页面为 http://127.0.0.1:5188/；大厅入口为 http://127.0.0.1:3002/#hall，通过原 #universe 子页面嵌入。没有新增运行时依赖，没有调整平台认证或更换原播放器输出路径。
+日期：2026-10-06。源码位于 `C:\path\to\music-universe`。开发页面为 http://127.0.0.1:5188/；大厅入口为 http://127.0.0.1:3002/#hall，通过原 #universe 子页面嵌入。没有新增运行时依赖，没有调整平台认证或更换原播放器输出路径。
 
 ## 用户补充：解除跟随归还恒星锚点
 

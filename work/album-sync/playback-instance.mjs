@@ -1,5 +1,5 @@
 import {readFile,writeFile,copyFile} from 'node:fs/promises';
-const root='C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe';
+const root='C:/path/to/music-universe';
 const file=root+'/src/hooks/useAudioPlayback.ts';
 let source=await readFile(file,'utf8');
 if(!source.includes('  id: string\n  title: string') || !source.includes('    trackRef.current = info\n    setTrack(info)')) throw new Error('Audio engine source changed');

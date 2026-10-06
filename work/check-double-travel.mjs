@@ -1,5 +1,5 @@
 import { chromium, expect } from '@playwright/test'
-const browser = await chromium.launch({ executablePath: 'C:/Users/IKUN/AppData/Local/ms-playwright/chromium-1243/chrome-win64/chrome.exe', headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
+const browser = await chromium.launch({ executablePath: 'C:/path/to/ms-playwright/chromium-1243/chrome-win64/chrome.exe', headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const errors = []

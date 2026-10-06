@@ -34,13 +34,13 @@
 需要导入腾讯云的只有这个公钥文件：
 
 ```text
-C:\Users\IKUN\Documents\ChatGPT\腾讯黑客松\work\public-deployment\ssh\tencent-music-world.pub
+C:\path\to\music-world\work\public-deployment\ssh\tencent-music-world.pub
 ```
 
 在本机 PowerShell 运行下面这条命令，可以把**公钥**复制到剪贴板：
 
 ```powershell
-Get-Content -Raw -LiteralPath 'C:\Users\IKUN\Documents\ChatGPT\腾讯黑客松\work\public-deployment\ssh\tencent-music-world.pub' | Set-Clipboard
+Get-Content -Raw -LiteralPath 'C:\path\to\music-world\work\public-deployment\ssh\tencent-music-world.pub' | Set-Clipboard
 ```
 
 在控制台的“SSH 密钥”中选择“创建密钥”：

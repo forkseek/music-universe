@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-const app = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const app = 'C:/path/to/music-universe'
 const browserFile = app + '/tests/browser.mjs'
 let source = (await fs.readFile(browserFile, 'utf8')).replaceAll('\r\n', '\n')
 source = source.replace('width: 1600, height: 1100', 'width: 1600, height: 900')

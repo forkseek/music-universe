@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises'
-const app = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const app = 'C:/path/to/music-universe'
 const backgroundFile = app + '/src/components/ImmersiveBackground.tsx'
 let background = await fs.readFile(backgroundFile, 'utf8')
 background = background.replace('vec2(6.0,4.0)', 'vec2(19.0,15.0)')

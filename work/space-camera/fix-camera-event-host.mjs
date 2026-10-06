@@ -1,5 +1,5 @@
 import {readFile,writeFile} from 'node:fs/promises'
-const root='C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe/'
+const root='C:/path/to/music-universe/'
 let text=await readFile(root+'src/components/SceneInteraction.tsx','utf8')
 text=text.replace('const { camera, size, gl, invalidate } = useThree()', 'const { camera, size, gl, invalidate, events } = useThree()')
 text=text.replace('    const canvas = gl.domElement\n    let dragPointer', '    const canvas = gl.domElement\n    const eventHost = events.connected instanceof HTMLElement ? events.connected : canvas\n    let dragPointer')

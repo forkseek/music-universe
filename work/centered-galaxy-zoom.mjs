@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-const app = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const app = 'C:/path/to/music-universe'
 function replaceOnce(source, before, after) {
   if (!source.includes(before) || source.indexOf(before) !== source.lastIndexOf(before)) throw new Error(`Unexpected source near ${before.slice(0, 90)}`)
   return source.replace(before, after)

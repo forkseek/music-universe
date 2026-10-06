@@ -2,8 +2,8 @@
   "version": 1,
   "createdAt": "2026-10-05T18:22:22.914Z",
   "roots": {
-    "main": "C:\\Users\\IKUN\\Documents\\ChatGPT\\腾讯黑客松",
-    "universe": "C:\\Users\\IKUN\\Documents\\Codex\\2026-10-04\\referenced-chatgpt-conversation-this-is-an-3\\outputs\\music-universe"
+    "main": "C:\\path\\to\\music-world",
+    "universe": "C:\\path\\to\\music-universe"
   },
   "files": [
     {

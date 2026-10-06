@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
-$orbitRoot = 'C:\Users\IKUN\Documents\Codex\2026-10-04\referenced-chatgpt-conversation-this-is-an-3\outputs\music-universe'
-$orbitOutput = 'C:\Users\IKUN\Documents\Codex\2026-10-04\referenced-chatgpt-conversation-this-is-an-3\outputs\music-universe-source.zip'
+$orbitRoot = 'C:\path\to\music-universe'
+$orbitOutput = 'C:\path\to\music-universe-source.zip'
 $orbitRoot = (Resolve-Path -LiteralPath $orbitRoot).Path
 $orbitFiles = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
 foreach ($orbitDirectory in @('src', 'public', 'tests')) {

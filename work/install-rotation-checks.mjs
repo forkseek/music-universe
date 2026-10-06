@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-const root = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const root = 'C:/path/to/music-universe'
 fs.copyFileSync('work/album-rotation/rotation.mjs.txt', `${root}/tests/rotation.mjs`)
 const path = `${root}/package.json`
 const pkg = JSON.parse(fs.readFileSync(path, 'utf8'))

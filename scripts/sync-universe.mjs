@@ -4,7 +4,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
 import path from 'node:path';
 
 const root = process.cwd();
-const source = path.resolve(process.env.MUSIC_UNIVERSE_SOURCE || process.argv[2] || path.join(root, '../../Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'));
+const source = path.resolve(process.env.MUSIC_UNIVERSE_SOURCE || process.argv[2] || path.join(root, '../../music-universe'));
 const destination = path.join(root, 'public/universe');
 if (path.dirname(destination) !== path.join(root, 'public')) throw new Error('Invalid universe destination');
 if (!existsSync(path.join(source, 'package.json'))) {

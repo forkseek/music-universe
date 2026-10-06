@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-const app = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const app = 'C:/path/to/music-universe'
 const stage = path.resolve('work/fullscreen-universe/src')
 const previous = path.resolve('work/fullscreen-universe/previous')
 await fs.mkdir(previous, { recursive: true })

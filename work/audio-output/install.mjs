@@ -1,6 +1,6 @@
 import { copyFileSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-const target = 'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'
+const target = 'C:/path/to/music-universe'
 for (const [name, destination] of [['albumMusic.ts','src/lib/albumMusic.ts'],['useAlbumMusic.ts','src/hooks/useAlbumMusic.ts'],['useAudioPlayback.ts','src/hooks/useAudioPlayback.ts'],['PlayerBar.tsx','src/components/PlayerBar.tsx'],['audio-output.css','src/audio-output.css']]) copyFileSync(new URL(name,import.meta.url),path.join(target,destination))
 const mutate = (file, fn) => { const dest=path.join(target,file); const original=readFileSync(dest,'utf8'); const next=fn(original.replace(/\r\n/g,'\n')); writeFileSync(dest,original.includes('\r\n') ? next.replace(/\n/g,'\r\n') : next) }
 const replace = (source, before, after) => { if (!source.includes(before)) throw new Error('Expected source not found: '+before.slice(0,70)); return source.replace(before,after) }

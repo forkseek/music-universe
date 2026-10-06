@@ -3,7 +3,7 @@ from difflib import unified_diff
 import json
 
 workspace = Path(__file__).resolve().parents[2]
-universe = Path(r'C:/Users/IKUN/Documents/Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe')
+universe = Path(r'C:/path/to/music-universe')
 output = workspace / 'work/universe-enhancements'
 backup = output / 'backup/universe'
 new_files = [

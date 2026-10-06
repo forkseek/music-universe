@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 const base = 'http://127.0.0.1:3002';
-const universe = path.resolve(process.env.MUSIC_UNIVERSE_SOURCE || path.join(process.cwd(), '../../Codex/2026-10-04/referenced-chatgpt-conversation-this-is-an-3/outputs/music-universe'));
+const universe = path.resolve(process.env.MUSIC_UNIVERSE_SOURCE || path.join(process.cwd(), '../../music-universe'));
 const session = await fetch(base + '/api/music/session', { headers: { 'X-Music-World': '1' } });
 assert.equal(session.status, 200);
 // Only use the session internally; never print or write its credential.
