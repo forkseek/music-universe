@@ -12,5 +12,6 @@
 
 # The maintained OpenNext adapter is selected automatically by Netlify.
 # DATABASE_URL, MUSIC_CREDENTIAL_SECRET, APP_ORIGIN, MUSIC_DESKTOP_LOGIN=0 and
-# MUSIC_AUDIO_RESPONSE_BYTES=4194304 must be configured in Functions scope.
+# MUSIC_AUDIO_RESPONSE_BYTES=4194304 must be configured in the site environment.
+# Free uses default scopes; mark credentials as secrets in production context.
 # Secrets must never be committed or exposed through NEXT_PUBLIC_* variables.

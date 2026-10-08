@@ -7,7 +7,7 @@
 1. 在 Netlify 使用自己的 GitHub 账号登录，选择 **Free**，连接 `forkseek/music-universe` 的 `codex/netlify-neon` 分支。
 2. 使用仓库中的 `netlify.toml`：Node.js 24，先安装星系前端依赖，再构建前端与 Next.js，发布目录 `.next`。由官方维护的 OpenNext 适配器生成后台函数，不固定适配器版本。
 3. 本分支在 Netlify 使用 `npm run build -- --webpack`。这是 Next 官方构建选项，避免本机 Windows 下 Turbopack 输出中的目录符号链接复制权限问题；不修改适配器或关闭系统权限检查。
-4. 在 Netlify **Functions** 作用域设置下表变量。凭据不能写入 GitHub、`netlify.toml`、网页代码或 `NEXT_PUBLIC_*` 变量。
+4. 在 Netlify 站点后台环境变量中设置下表变量。Free 使用默认作用域；单独选择 Functions 作用域需要 Pro，不能为了设置作用域升级付费计划。将数据库连接和加密密钥标记为 secret，并明确设置为 production 环境。凭据不能写入 GitHub、`netlify.toml`、网页代码或 `NEXT_PUBLIC_*` 变量。
 
 | 变量 | 值与用途 |
 | --- | --- |
