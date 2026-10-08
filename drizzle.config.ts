@@ -1,6 +1,7 @@
-import { defineConfig } from "drizzle-kit";
-
+import { defineConfig } from 'drizzle-kit';
 export default defineConfig({
-  dialect: "sqlite", schema: "./src/db/schema.ts", out: "./src/db/migrations",
-  // Generate only. Application persistence/connection is deliberately a Day 2 task.
+  schema: './src/db/schema.ts',
+  out: './src/db/postgres-migrations',
+  dialect: 'postgresql',
+  dbCredentials: { url: process.env.DATABASE_URL || '' },
 });

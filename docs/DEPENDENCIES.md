@@ -1,3 +1,5 @@
+> 历史说明：以下 SQLite/腾讯云内容对应 master 版本。codex/render-neon 发布分支改用 PostgreSQL；当前部署请遵循 [Render + Neon 指南](DEPLOY_RENDER_NEON.md)。
+
 # 依赖兼容核对
 
 核对日期：2026-10-02。本机 Node 24.18.0、npm 11.16.0。所有直接依赖精确锁定，完整解析结果见 package-lock.json。

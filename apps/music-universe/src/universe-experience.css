@@ -1,0 +1,43 @@
+.space-motion-backdrop { filter: brightness(var(--universe-background-brightness, .84)); }
+.scene-label-layer .planet-caption,
+.scene-label-layer .planet-number {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--planet-label-fade, 260ms) ease;
+}
+.scene-label-layer [data-focused="true"] { opacity: 1; }
+.scene-label-layer .planet-caption[data-focused="true"] { display: block; pointer-events: auto; width: max-content !important; min-width: 0; max-width: min(210px, 30vw); }
+.scene-label-layer .planet-caption[data-focused="true"] button { color: #e6dbc5; font-size: 11px; line-height: 1.5; text-shadow: 0 2px 12px #000; }
+.scene-label-layer .planet-caption[data-playing="true"] button,
+.scene-label-layer .planet-number[data-playing="true"] span { color: #f4d5a1; }
+.scene-label-layer .planet-caption button:focus-visible { outline: 1px solid #e0c08a; outline-offset: 4px; border-radius: 3px; }
+.universe-experience-controls { position: absolute; z-index: 20; right: 32px; top: 225px; }
+.universe-experience-trigger { display: flex; align-items: center; gap: 7px; padding: 9px 12px; border: 1px solid #a8bdcf24; border-radius: 20px; color: #c5cdda; background: #0915229e; backdrop-filter: blur(14px); font-size: 11px; cursor: pointer; }
+.universe-experience-trigger:hover, .universe-experience-trigger[aria-expanded="true"] { color: #f2dfbc; border-color: #d8bb8260; }
+.universe-experience-menu { position: absolute; right: 0; top: 45px; width: 256px; padding: 16px; border: 1px solid #b1c5da29; border-radius: 15px; background: #0a1529f0; box-shadow: 0 10px 40px #0006; backdrop-filter: blur(20px); color: #cdd6e0; }
+.experience-menu-head { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+.experience-menu-head button { border: 0; background: transparent; padding: 4px; color: #adbbcc; cursor: pointer; }
+.universe-experience-menu fieldset { margin: 16px 0 0; padding: 0; border: 0; }
+.universe-experience-menu legend { padding: 0; margin-bottom: 9px; font-size: 11px; color: #aab9ca; }
+.experience-options { display: flex; gap: 5px; }
+.experience-options button { flex: 1; border: 1px solid #b2c5d11c; border-radius: 7px; padding: 8px 4px; background: #ffffff05; color: #b5c3d3; font: inherit; font-size: 11px; cursor: pointer; }
+.experience-options button[aria-pressed="true"] { color: #f2d7a8; border-color: #d9b97870; background: #d9b97814; }
+.experience-options button:disabled { opacity: .4; cursor: default; }
+.universe-experience-controls button:focus-visible { outline: 2px solid #eed3a4; outline-offset: 3px; }
+.universe-experience-menu p { margin: 12px 0 0; line-height: 1.6; font-size: 11px; color: #aebdd1; }
+.hud-hidden .universe-experience-controls { top: auto; bottom: 26px; right: 134px; }
+.hud-hidden .universe-experience-trigger { width: 43px; height: 43px; padding: 0; justify-content: center; }
+.hud-hidden .universe-experience-trigger > span { display: none; }
+.hud-hidden .universe-experience-menu { top: auto; bottom: 52px; max-height: calc(100dvh - 130px); overflow-y: auto; }
+.hud-hidden .universe-experience-trigger:not([aria-expanded="true"]) { opacity: .58; }
+@media (max-width: 620px) {
+  .universe-experience-controls { top: 181px; right: 17px; }
+  .hud-hidden .universe-experience-controls { right: 104px; bottom: 20px; }
+  .hud-hidden .universe-experience-trigger { width: 34px; height: 34px; }
+  .hud-hidden .universe-experience-menu { right: -87px; width: min(256px, calc(100vw - 34px)); }
+  .universe-experience-trigger { padding: 8px 10px; font-size: 10px; }
+  .scene-label-layer .planet-caption[data-focused="true"] { max-width: min(155px, 36vw); }
+  .scene-label-layer .planet-caption[data-focused="true"] button { font-size: 10px; }
+}
+@media (max-height: 580px) and (min-width: 621px) { .universe-experience-controls { top: 149px; right: 20px; } }
+@media (prefers-reduced-motion: reduce) { .scene-label-layer .planet-caption, .scene-label-layer .planet-number { transition: none; } }

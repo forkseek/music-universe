@@ -1,0 +1,18 @@
+.music-platform-tabs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; padding:5px; border:1px solid #e9ce9820; border-radius:12px; background:#03091465; margin:18px 0 12px; }
+.music-platform-tabs button { appearance:none; background:transparent; border:0; color:#95a3b5; padding:10px 3px; border-radius:8px; font:inherit; font-size:12px; cursor:pointer; transition:background .2s,color .2s; }
+.music-platform-tabs button[aria-pressed=true] { background:#e9ce981b; color:#f2d9a8; box-shadow:inset 0 0 0 1px #e9ce9830; }
+.music-platform-tabs button:focus-visible { outline:2px solid #e9ce98; outline-offset:2px; }
+.music-platform-account { display:flex; align-items:center; gap:10px; padding:13px 0 18px; border-bottom:1px solid #d8e3f514; margin-bottom:18px; }
+.music-platform-account .music-search-copy { flex:1; min-width:0; }
+.music-platform-account .music-search-copy span { white-space:normal; line-height:1.6; font-size:11px; margin-top:4px; }
+.music-platform-account .music-search-button { flex-shrink:0; padding:7px 9px; font-size:11px; }
+.music-platform-avatar { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; color:#d6be8e; background:#e7d1a612; flex-shrink:0; overflow:hidden; }
+.music-platform-avatar img { width:100%; height:100%; object-fit:cover; }
+.music-platform-login { padding:16px; border:1px solid #e9ce9826; background:#060d1b80; border-radius:12px; text-align:center; margin:0 0 16px; }
+.music-platform-login p { display:flex; align-items:center; justify-content:center; gap:7px; color:#c5d0df; font-size:12px; line-height:1.7; }
+.music-platform-qr { display:block; width:184px; height:184px; max-width:100%; margin:0 auto 12px; background:white; padding:6px; border-radius:8px; }
+.music-platform-local { margin-top:22px; border-top:1px solid #d8e3f514; padding-top:15px; }
+.music-platform-local summary { color:#8f9db0; cursor:pointer; font-size:12px; padding:4px 0; }
+.music-platform-local .music-search-import { margin-top:12px; }
+.music-platform-account button:disabled { opacity:.45; cursor:wait; }
+@media(max-width:460px) { .music-platform-account { flex-wrap:wrap; } .music-platform-tabs button { font-size:11px; } }

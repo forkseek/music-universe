@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: music-universe
+    runtime: node
+    plan: free
+    region: singapore
+    branch: codex/render-neon
+    autoDeployTrigger: off
+    buildCommand: npm ci --include=dev && npm --prefix apps/music-universe ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: HOSTNAME
+        value: 0.0.0.0
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: ELECTRON_SKIP_BINARY_DOWNLOAD
+        value: "1"
+      - key: MUSIC_DESKTOP_LOGIN
+        value: "0"
+      - key: AI_PROVIDER
+        value: none
+      - key: DATABASE_URL
+        sync: false
+      - key: MUSIC_CREDENTIAL_SECRET
+        generateValue: true

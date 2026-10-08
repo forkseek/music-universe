@@ -1,45 +1,87 @@
 import "server-only";
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { mkdirSync } from "node:fs";
+import { Pool, type PoolConfig } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import path from "node:path";
 import * as schema from "./schema";
-
-/**
- * WAL keeps readers out of the writer's way, but it needs a shared-memory `-shm` file and reliable
- * POSIX advisory locks. A network-backed volume (CloudBase CFS, NFS) guarantees neither, so a
- * deployment on one must fall back to a rollback journal or risk corrupting the library.
- * Unset keeps the existing local behaviour. The allowlist also keeps the value out of the SQL text.
- */
-const JOURNAL_MODES = ["WAL", "DELETE", "TRUNCATE", "PERSIST"] as const;
-export function journalMode(value = process.env.SQLITE_JOURNAL_MODE): string {
-  const mode = (value ?? "").trim().toUpperCase();
-  if (!mode) return "WAL";
-  if (!(JOURNAL_MODES as readonly string[]).includes(mode)) throw new Error(`SQLITE_JOURNAL_MODE 取值非法：仅支持 ${JOURNAL_MODES.join(" / ")}。`);
-  return mode;
+export interface DatabaseContext {
+    db: PgDatabase<PgQueryResultHKT, typeof schema>;
+    readonly closed: boolean;
+    close(): Promise<void>;
 }
-
-export function openDatabase(filename: string) {
-  if (filename !== ":memory:") mkdirSync(path.dirname(filename), { recursive: true });
-  const sqlite = new Database(filename, { timeout: 5_000 });
-  try {
-    sqlite.pragma("foreign_keys = ON");
-    sqlite.pragma(`journal_mode = ${journalMode()}`);
-    sqlite.pragma("synchronous = FULL");
-    const db = drizzle(sqlite, { schema });
-    migrate(db, { migrationsFolder: path.join(process.cwd(), "src/db/migrations") });
-    return { db, sqlite, filename };
-  } catch (error) { sqlite.close(); throw error; }
+/** Never include the URL in errors: it contains the database password. */
+export function postgresOptions(value: string | undefined): PoolConfig {
+    if (!value)
+        throw new Error("请在服务端配置 Neon 的 DATABASE_URL。");
+    let url: URL;
+    try {
+        url = new URL(value);
+    }
+    catch {
+        throw new Error("DATABASE_URL 必须为 PostgreSQL 连接地址。");
+    }
+    if (!["postgres:", "postgresql:"].includes(url.protocol) || !url.hostname || !url.pathname.slice(1) || url.hash) {
+        throw new Error("DATABASE_URL 必须为 PostgreSQL 连接地址。");
+    }
+    if (url.hostname.includes("-pooler."))
+        throw new Error("请使用 Neon Direct connection，关闭 Connection pooling；应用已有连接池，迁移锁需要直连。");
+    const local = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    if (!local && url.searchParams.get("sslmode") === "disable")
+        throw new Error("公网数据库连接必须启用 TLS。");
+    // pg's URL SSL parameters override its explicit ssl option; enforce verified TLS remotely.
+    for (const key of ["sslmode", "sslcert", "sslkey", "sslrootcert"])
+        url.searchParams.delete(key);
+    return { connectionString: url.href, ssl: local ? false : { rejectUnauthorized: true },
+        max: 3, idleTimeoutMillis: 20000, connectionTimeoutMillis: 15000,
+        statement_timeout: 15000, application_name: "music-universe" };
 }
-export type DatabaseContext = ReturnType<typeof openDatabase>;
-
-const globalDatabase = globalThis as typeof globalThis & { musicWorldDatabase?: DatabaseContext };
-export function getDatabase(): DatabaseContext {
-  if (globalDatabase.musicWorldDatabase) return globalDatabase.musicWorldDatabase;
-  const configured = process.env.DATABASE_PATH ?? process.env.DATABASE_URL?.replace(/^file:/u, "") ?? "./data/music-world.db";
-  if (configured === ":memory:" || /^(https?|libsql):/u.test(configured)) throw new Error("DATABASE_PATH 必须指向持久化 SQLite 文件。");
-  // Runtime storage is provisioned separately; never bundle database files.
-  globalDatabase.musicWorldDatabase = openDatabase(path.resolve(/* turbopackIgnore: true */ configured));
-  return globalDatabase.musicWorldDatabase;
+export async function openDatabase(value = process.env.DATABASE_URL): Promise<DatabaseContext> {
+    const pool = new Pool(postgresOptions(value));
+    pool.on("error", () => console.warn("PostgreSQL connection interrupted; the pool will reconnect."));
+    try {
+        const client = await pool.connect();
+        try {
+            // Old/new deploys can overlap. Serialize migration checks on a dedicated connection.
+            await client.query("SELECT pg_advisory_lock(85072026)");
+            await migrate(drizzle(client, { schema }), {
+                migrationsFolder: process.env.MUSIC_MIGRATIONS_ROOT || path.join(process.cwd(), "src/db/postgres-migrations"),
+            });
+        }
+        finally {
+            try {
+                await client.query("SELECT pg_advisory_unlock(85072026)");
+            }
+            finally {
+                client.release();
+            }
+        }
+        let closed = false;
+        return { db: drizzle(pool, { schema }), get closed() { return closed; },
+            async close() { if (!closed) {
+                closed = true;
+                await pool.end();
+            } } };
+    }
+    catch (error) {
+        await pool.end();
+        throw error;
+    }
+}
+const shared = globalThis as typeof globalThis & {
+    musicWorldPostgres?: Promise<DatabaseContext>;
+};
+export function getDatabase(): Promise<DatabaseContext> {
+    return shared.musicWorldPostgres ??= openDatabase().catch(error => {
+        shared.musicWorldPostgres = undefined;
+        throw error;
+    });
+}
+/** Preserve the original serialized import/delete behaviour with per-user PostgreSQL locks. */
+export async function userTransaction<T>(context: DatabaseContext, userId: string, action: (transaction: DatabaseContext) => Promise<T>): Promise<T> {
+    return context.db.transaction(async (db) => {
+        await db.execute(sql `SELECT pg_advisory_xact_lock(hashtextextended(${userId}, 0))`);
+        return action({ ...context, db });
+    });
 }

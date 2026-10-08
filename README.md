@@ -1,117 +1,43 @@
-# Music World
+# Music Universe / Music World
 
-把 CSV、JSON、TXT 歌单整理成统一、可去重、可追溯来源的歌曲集合，保存到 SQLite，再生成可操作的音乐世界。当前已完成互动播放空间、文件导入、匿名音乐库、60 首 Demo 元数据、可缩放地图、可保存的 Journey 和可操作的 Guide 事实推荐，并预留结构化模型接口与 QQ 官方 H5 SDK 适配层。文件可标记 QQ、网易云、酷狗、汽水或 Spotify 来源；这只是用户声明的元数据，不等于平台账号直连。真实模型服务和 QQ 平台授权尚未接入实测。
+专辑封面成为恒星，歌曲按曲序化为星球。包含全屏 3D 浏览、播放跟随、同步歌词、本地音频与 LRC、平台搜索和账号授权，以及自动顺序播放下一首。大厅和星系在同一个网站运行，不需要访客连接本机端口。
 
-## 本地运行
+此发布分支 **codex/render-neon** 使用 Next.js 16.3.8、React、Vite/R3F、Drizzle 和 PostgreSQL。原 master 分支及本机工程保留 SQLite；不自动迁移或公开本机数据库和账号凭证。
 
-需要 **Node.js 24.x**（本机验证版本 24.18.0）和 npm。本项目没有必填密钥，也不需要先启动数据库。
+[在 Render 免费部署](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fforkseek%2Fmusic-universe%2Ftree%2Fcodex%2Frender-neon) · [完整 Render + Neon 操作说明](docs/DEPLOY_RENDER_NEON.md) · [验证与限制](docs/DEPLOYMENT_VALIDATION.md)
 
-```powershell
-cd "C:\path\to\music-world"
-npm install
-npm run dev
-```
+## 本地运行发布分支
 
-打开 [http://127.0.0.1:3000](http://127.0.0.1:3000)。端口被占用时以终端显示的地址为准，或执行 `npm run dev -- --port 3100`。按 `Ctrl+C` 停止。界面使用深色主题，地图全图总览下可通过“快速定位”直接选择并放大节点。
+需要 Node.js 24.x 和 PostgreSQL。复制 .env.example 为 .env.local，配置 DATABASE_URL（Neon Direct connection，关闭 Connection pooling）和至少 32 字符的固定 MUSIC_CREDENTIAL_SECRET。不要提交个人环境文件。
 
-打开 `/#world` 会直接进入互动播放器，可搜索 QQ 音乐歌曲、查看同步歌词、导入本地音频与 LRC 歌词，或播放三首原创试听。QQ 在线播放由单独运行且已授权的 radiohand 服务提供，接入步骤见 [播放器与 radiohand 适配说明](docs/RADIOHAND_PLAYER.md)。
-
-首页点击“体验三种格式样例”，预期 **9 条输入 → 3 首歌曲，合并 6 条，每首保留 3 条来源**。也可一次选择多个自己的歌单文件，点击 `Build My Music World` 整理歌曲集合。
-
-自己的文件先在浏览器预览，点击“保存到我的音乐库”才上传；服务器重新验证并事务保存。导入前可在“文件声明的来源”选择平台，JSON/CSV 中的 `provider` 列也可逐首指定。然后填写世界名称，点击“生成并保存音乐世界”。在地图中点击节点查看艺术家、专辑、流派、来源链接和连接依据，再点击“从此节点生成 5 站 Journey”。路线以橙色虚线亮起；点击站点可让地图定位。点击“打开路线详情”可保存网址并刷新重看。
-
-关系卡片可输入“更梦幻一点”等方向。没有模型配置时，基础算法只会依据已导入的流派标签调整顺序；Journey 会标明实际运行模式并保存方向。连接卡片中的相邻节点可直接点击，进入下一站；AI Guide 事实模式可选择第二个节点解释已保存的直接连接、推荐真实节点、定位地图，并按方向创建新 Journey。没有响度数据时不会猜测“不要太吵”。当前 Guide 暂不调用模型。
-
-三份样例按钮仅做本地预览；“载入 60 首 Demo · 20 位艺术家 · Try Demo”进入独立演示库。三份样例只包含 3 首不同歌曲，生成 Journey 时如实返回 3 站；Demo 和至少 5 首歌的文件可得到 5 站。默认核心探索使用基础算法，不需要 AI Key。
-
-默认数据库是 `data/music-world.db`，首次访问自动创建并应用迁移。不同浏览器通过随机 HttpOnly Cookie 分隔数据，数据库只存 token 哈希；保留同一 Cookie 才能重新访问。清除 Cookie、使用隐私窗口或换设备会进入新库，目前没有账号恢复功能。首页“清空当前会话音乐库”删除此会话的歌曲、来源、导入记录、Demo 副本与派生世界。
-
-“下载结果 JSON”导出导入报告；世界页面可下载完整世界数据。两者都是结果，不是原始歌单输入格式。少量节点默认适配全图；较大音乐世界默认以当前节点为中心，左下角可缩放或适配全图，上方可快速定位；拖动空白处移动地图，拖动节点调整本次浏览位置。未单独显示为主要节点的歌曲仍保存在库中，并可作为 Journey 站点临时出现在地图上。
-
-`.env.example` 是可选配置示例：需要配置时自行复制为 `.env.local`。QQ 开关默认关闭；只有获授权的腾讯连连自定义 H5 面板才应开启，浏览器会再检查 SDK 方法和授权状态，具体边界见 [QQ 适配说明](docs/QQMUSIC_OFFICIAL_ADAPTER.md)。`AI_API_KEY` 只在带 `server-only` 边界的模块读取，不使用 `NEXT_PUBLIC_` 前缀。模型接口采用兼容 Chat Completions 的服务端适配层；之后获得真实服务时再配置 `AI_PROVIDER=openai-compatible`、`AI_MODEL`、`AI_API_KEY` 和以 `/v1` 结尾的 `AI_BASE_URL`。当前没有真实服务调用的验收记录。
-
-## 专辑宇宙场景
-
-大厅 `/#hall` 的 **专辑宇宙** 轨道标记连接到独立运行的 Hybrid 3D 音乐宇宙 `http://127.0.0.1:5173/?from=hall`。默认全屏显示横向专辑星球与细轨道，不显示导航、标题或播放器。指向星球向上滚轮即可靠近，双击播放对应音乐并出现光环、环绕星尘；再次双击暂停。按 `Esc` 返回 `http://127.0.0.1:3002/?from=universe#hall`。原有七个大厅模块仍正常使用；宇宙完整素材工作台通过 `/?studio=1` 打开。
-
-宇宙源码位于 `C:\path\to\music-universe`。这两个入口需要两边服务同时运行；大厅使用 `3002` 时，可先在本项目终端设置 `$env:PORT='3002'` 与 `$env:APP_ORIGIN='http://127.0.0.1:3002'`，再执行 `npm run build`、`npm start`。大厅的这一场景地址由 `NEXT_PUBLIC_MUSIC_UNIVERSE_ROOM_URL` 配置；更改后重新构建。
-
-## 验证命令
-
-```powershell
-npm run check            # ESLint、TypeScript、单元与 SQLite 集成测试
-npm run build            # 正式构建
-npx playwright install chromium   # 首次浏览器测试时安装测试浏览器
-npm run test:e2e         # 自动在 3100 端口启动开发服务并验证桌面/移动页面
-npm run test:restart     # 构建后：独立部署包跨进程读回音乐库、世界和 Journey
-npm run smoke:local      # 在 npm start 运行时，用一次性匿名会话检查 Demo、Journey、刷新和删除
-npm run db:init          # 可选：手动应用迁移并检查数据库完整性
-npm run storage:check    # 在 DATABASE_PATH 旁创建临时库，验证写入、WAL 与重新打开
-npm run db:generate     # 根据 Drizzle schema 生成迁移 SQL，不连接/修改数据库
-```
-
-重现锁定依赖可使用 `npm ci`。自动化测试使用独立临时库，不清理真实用户数据库。部署需单个 Node.js 实例及可持久保存的本地磁盘；提供 Dockerfile、Compose 命名卷和 [部署说明](docs/DEPLOYMENT.md)。目前已验证本机独立生产包及跨进程重启，尚未部署云端或运行 Docker。
-
-## 部署
-
-持久层是单文件 SQLite，因此只能**单实例**运行，并把数据库放在**可持久保存的本地磁盘**上；不要部署到只有临时文件系统的函数平台，也不要把同一个库分散到多台服务器的本地磁盘。完整说明见 [部署说明](docs/DEPLOYMENT.md) 与 [CloudBase 云托管部署](docs/DEPLOY_CLOUDBASE.md)。
-
-### 方式一：单台 Node.js
-
-```powershell
+~~~sh
 npm ci
+npm --prefix apps/music-universe ci
+npm run dev
+~~~
+
+访问 http://127.0.0.1:3000/#hall，点击专辑宇宙进入 /#universe。星系源码在 apps/music-universe；正式构建自动生成 public/universe，音乐 API 使用同站点地址。单独开发星系仍可在 apps/music-universe 执行 npm run dev，并将主服务运行在 3002。
+
+## 验证与正式启动
+
+~~~sh
+npm run check
+npm --prefix apps/music-universe test
 npm run build
+npm run test:restart
+npm run storage:check
 npm start
-```
+~~~
 
-- 需 Node.js 24.x；以固定服务用户运行，并给数据库父目录写权限。
-- `DATABASE_PATH` 指向发布目录之外的固定绝对路径，例如 `/var/lib/music-world/music-world.db`（迁移文件与 WAL 文件同样需要写权限）。
-- `APP_ORIGIN` 设为实际入口，如 `https://music.example.com`，不带尾斜杠；服务置于 HTTPS 反向代理之后。
-- 精简发布：把 `.next/standalone/`、`public/`、`.next/static/` 复制到同一目录（分别作为发布根、`public/`、`.next/static/`），在该目录执行 `node server.js`。
-- 可选自检：`npm run storage:check`（验证目标目录可写、启用 WAL 并可重新打开），`npm run db:init`（手动应用迁移并检查完整性）。
+单元集成测试使用独立的 PGlite PostgreSQL 引擎；重启测试验证生产包通过 PostgreSQL 协议保留歌单、世界与 Journey。storage:check 检查实际配置的数据库。浏览器整站测试需另行设置 TEST_DATABASE_URL，避免写入生产库。
 
-### 方式二：Docker / Compose
+## 部署与账号
 
-```sh
-docker compose up --build -d
-docker compose exec music-world node scripts/storage-check.mjs
-```
+Render 配置见根目录 render.yaml，明确使用 Free，数据由 Neon 保存。APP_ORIGIN 自动取 Render 提供的网址；绑定自有域名时再显式设置。应用使用 HttpOnly 匿名会话隔离音乐库，清除 Cookie 或换设备不会自动找回原库。
 
-默认只绑定宿主机 `127.0.0.1:3000`，数据库落在命名卷 `music-world-data`（容器内 `/app/data/music-world.db`）。公开服务时通过 `APP_ORIGIN` 与反向代理暴露；命名卷的数据生命周期独立于容器，请勿执行会删除卷的清理命令。
+云服务器关闭 Electron 桌面登录。QQ 官方网站授权需自己的 QQ Connect 应用配置，QQ 身份授权不授予音乐版权或会员权限；网易云二维码仍需真实账号确认。平台搜索、可播放权限、实际音源获取是独立步骤。完整边界和免费休眠、额度限制见部署说明。
 
-### 方式三：腾讯云 CloudBase 云托管
-
-目标形式是单副本 + CFS 挂载，并**必须**把 `SQLITE_JOURNAL_MODE` 设为 `DELETE`——WAL 依赖 `-shm` 共享内存与可靠的文件锁，在 CFS 这类网络文件系统上会导致数据库损坏。
-
-```sh
-npx --package @cloudbase/cli@3.8.5 tcb login
-npx --package @cloudbase/cli@3.8.5 tcb cloudrun deploy --env-id <envId> --service-name music-world --source . --port 3000 --min-num 1 --max-num 1 --open-access-types PUBLIC --wait
-```
-
-`--min-num 1 --max-num 1` 必须写死，禁止自动扩缩容。仓库根目录另提供 `cloudbaserc.json`（声明式写法，尚未实测）。逐参数说明与验收清单见 [CloudBase 云托管部署](docs/DEPLOY_CLOUDBASE.md)。
-
-### 关键环境变量
-
-| 变量 | 用途 | 生产取值 |
-| --- | --- | --- |
-| `DATABASE_PATH` | SQLite 文件位置 | 持久磁盘上的绝对路径，如 `/app/data/music-world.db` |
-| `APP_ORIGIN` | 源站守卫与 Cookie `secure` 判定 | `https://<公网域名>`，不带尾斜杠 |
-| `SQLITE_JOURNAL_MODE` | SQLite journal 模式 | 网络文件系统（CFS/NFS）用 `DELETE`；本地磁盘用默认 `WAL` |
-| `MUSIC_DESKTOP_LOGIN` | 本机 Electron 登录窗口 | 远程部署设为 `0` |
-| `NEXT_PUBLIC_ENABLE_QQMUSIC` | QQ 能力开关 | 默认 `false`，仅在已授权的 H5 面板内启用 |
-| `MUSIC_CREDENTIAL_SECRET` | 凭证加密密钥（仅服务端） | 生产显式配置；留空则在 `DATABASE_PATH` 旁生成 |
-
-其余可选变量见 [.env.example](.env.example)；`AI_*` 与 `QQ_CONNECT_*` 未配置时程序仍可正常运行。
-
-### 上线前检查
-
-```sh
-curl -I https://<公网域名>/
-curl https://<公网域名>/api/health
-curl -I https://<公网域名>/universe/index.html
-```
-
-浏览器中再确认：进入音乐大厅 → `#universe` 能加载 3D 场景 → 载入 Demo 并保存世界 → **重启服务**后重新打开同一个世界，数据仍在（验证持久卷已生效）。发布新版本前先用 SQLite 在线备份机制，或停机后备份整个数据目录；不要在 WAL 写入过程中只复制主 `.db` 文件。
+本分支的部署步骤以 DEPLOY_RENDER_NEON.md 为准；旧 CloudBase、SQLite 持久卷等文档保留作 master 历史参考。当前云端账号与公网验收尚待授权完成，不能把测试通过视作已经上线。
 
 ## 文件格式
 

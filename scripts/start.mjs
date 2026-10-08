@@ -9,9 +9,10 @@ const standalone = path.join(root, nextDist, "standalone");
 if (!existsSync(path.join(standalone, "server.js"))) throw new Error("请先运行 npm run build。");
 cpSync(path.join(root, "public"), path.join(standalone, "public"), { recursive: true });
 cpSync(path.join(root, nextDist, "static"), path.join(standalone, nextDist, "static"), { recursive: true });
-const configured = process.env.DATABASE_PATH ?? process.env.DATABASE_URL?.replace(/^file:/u, "") ?? "./data/music-world.db";
-if (configured === ":memory:" || /^(https?|libsql):/u.test(configured)) throw new Error("DATABASE_PATH 必须指向持久化 SQLite 文件。");
-// Standalone changes cwd; resolve storage first to keep dev and start on the same disk.
-process.env.DATABASE_PATH = path.resolve(root, configured);
-process.env.HOSTNAME = process.env.HOSTNAME || "127.0.0.1";
+if (!process.env.DATABASE_URL) throw new Error('请先配置 Neon DATABASE_URL。');
+if (!process.env.MUSIC_CREDENTIAL_SECRET || process.env.MUSIC_CREDENTIAL_SECRET.length < 32) throw new Error('请先配置固定的 MUSIC_CREDENTIAL_SECRET。');
+process.env.MUSIC_MIGRATIONS_ROOT ||= path.join(root, 'src/db/postgres-migrations');
+process.env.APP_ORIGIN ||= process.env.RENDER_EXTERNAL_URL || '';
+process.env.HOSTNAME ||= '0.0.0.0';
+process.env.MUSIC_DESKTOP_LOGIN = '0';
 await import(pathToFileURL(path.join(standalone, "server.js")).href);

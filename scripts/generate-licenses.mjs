@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -6,6 +6,15 @@ const project = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8"));
 const lock = JSON.parse(readFileSync(resolve(root, "package-lock.json"), "utf8"));
 const directRuntime = new Set(Object.keys(project.dependencies ?? {}));
 const directDevelopment = new Set(Object.keys(project.devDependencies ?? {}));
+function packageLicense(packagePath, entry) {
+  if (entry.license) return entry.license;
+  const file = resolve(root, packagePath, "package.json");
+  if (!existsSync(file)) return "UNKNOWN";
+  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  if (manifest.license) return typeof manifest.license === "string" ? manifest.license : manifest.license.type;
+  // Older packages publish the deprecated licenses array rather than license.
+  return manifest.licenses?.map(value => typeof value === "string" ? value : value.type).filter(Boolean).join(" AND ") || "UNKNOWN";
+}
 const rows = Object.entries(lock.packages)
   .filter(([path]) => path.startsWith("node_modules/"))
   .map(([path, entry]) => {
@@ -13,7 +22,7 @@ const rows = Object.entries(lock.packages)
     const directPath = path === `node_modules/${name}`;
     const role = directPath && directRuntime.has(name) ? "direct runtime"
       : directPath && directDevelopment.has(name) ? "direct development" : "transitive or optional";
-    return { name, version: entry.version ?? "unknown", license: entry.license ?? "UNKNOWN", path, role };
+    return { name, version: entry.version ?? "unknown", license: packageLicense(path, entry), path, role };
   }).sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path));
 
 if (rows.some((row) => row.license === "UNKNOWN")) throw new Error("Lockfile contains dependencies without license metadata; review them before publishing the manifest.");
@@ -26,7 +35,7 @@ const direct = rows.filter((row) => row.role.startsWith("direct "));
 const md = [
   "# 第三方开源依赖记录",
   "",
-  "依据当前 package-lock.json 生成。以下是项目直接声明的依赖及锁文件中的 SPDX 协议表达式；[完整锁文件清单](THIRD_PARTY_LICENSES.csv)包含直接、传递和可选依赖。清单表示解析出的依赖，不等同于特定操作系统的实际运行包，也不能代替逐个核对第三方素材和协议要求。",
+  "依据当前 package-lock.json 生成；锁文件缺少许可字段时核对已安装包的 package.json（包括旧版 licenses 字段）。以下是直接依赖及其协议表达式；[完整清单](THIRD_PARTY_LICENSES.csv)包含直接、传递和可选依赖。清单不等同于特定操作系统的实际运行包，也不能代替核对第三方素材和协议要求。",
   "",
   "| 包 | 版本 | 用途 | 协议表达式 |",
   "| --- | --- | --- | --- |",

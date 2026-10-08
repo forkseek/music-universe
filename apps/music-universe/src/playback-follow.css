@@ -1,0 +1,11 @@
+.planet-follow-control{position:absolute;right:30px;bottom:84px;z-index:18;display:flex;align-items:center;gap:10px;max-width:260px;padding:10px 13px;border:1px solid #95adbf30;border-radius:12px;background:#081321b5;backdrop-filter:blur(18px);color:#b5c6d3;text-align:left;cursor:pointer;transition:background .2s,border-color .2s,opacity .2s;}
+.planet-follow-control.is-following{border-color:#d6b88054;color:#e1c896;}
+.planet-follow-control:hover{background:#122238e8;border-color:#d6b88080;}
+.planet-follow-control:focus-visible{outline:2px solid #e1c896;outline-offset:4px;}
+.planet-follow-control:disabled{opacity:.45;cursor:default;}
+.planet-follow-control>svg{flex-shrink:0;}
+.planet-follow-control>span{display:flex;flex-direction:column;gap:3px;min-width:0;}
+.planet-follow-control strong{font-size:11px;font-weight:500;letter-spacing:.4px;}
+.planet-follow-control small{font-size:9px;line-height:1.4;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#91a5b8;}
+.planet-follow-control kbd{flex-shrink:0;margin-left:8px;border:1px solid #a0b4c529;border-radius:4px;padding:2px 4px;color:#8399ad;font-family:inherit;font-size:8px;}
+@media(max-width:620px){.planet-follow-control{right:20px;bottom:70px;max-width:190px;gap:8px;padding:8px 10px;}.planet-follow-control small{max-width:115px;}.planet-follow-control strong{font-size:10px;}.planet-follow-control kbd{display:none;}}

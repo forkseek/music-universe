@@ -1,3 +1,5 @@
+> 历史说明：以下 SQLite/腾讯云内容对应 master 版本。codex/render-neon 发布分支改用 PostgreSQL；当前部署请遵循 [Render + Neon 指南](DEPLOY_RENDER_NEON.md)。
+
 # D2 持久化部署准备
 
 当前已在 Windows / Node 24.18.0 验证独立生产包可启动，数据库自动初始化，并在结束旧进程、启动新进程后读回完全相同的音乐库、世界和五站 Journey。测试把部署包复制到项目外临时目录，不能依赖工作区的 node_modules 或迁移文件。

@@ -8,7 +8,7 @@ export default defineConfig({
     command: "npm run dev -- --port 3100",
     url: "http://127.0.0.1:3100",
     reuseExistingServer: false,
-    env: { DATABASE_PATH: "./test-results/e2e-music-world.db", NEXT_DIST_DIR: ".next-test", APP_ORIGIN: "http://127.0.0.1:3100",
+    env: { DATABASE_URL: process.env.TEST_DATABASE_URL ?? "", MUSIC_CREDENTIAL_SECRET: "browser-test-key-not-used-in-production", MUSIC_DESKTOP_LOGIN: "0", NEXT_DIST_DIR: ".next-test", APP_ORIGIN: "http://127.0.0.1:3100",
       AI_PROVIDER: "none", AI_API_KEY: "", NEXT_PUBLIC_ENABLE_QQMUSIC: process.env.NEXT_PUBLIC_ENABLE_QQMUSIC ?? "false" },
     timeout: 120_000,
   },

@@ -1,3 +1,5 @@
+> 历史说明：以下 SQLite/腾讯云内容对应 master 版本。codex/render-neon 发布分支改用 PostgreSQL；当前部署请遵循 [Render + Neon 指南](DEPLOY_RENDER_NEON.md)。
+
 # 部署到腾讯云 CloudBase 云托管
 
 目标是让评委能点开一个公网 HTTPS 地址，而不是 `127.0.0.1`。

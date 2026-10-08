@@ -1,0 +1,162 @@
+/* 音乐搜索 / 音频引入面板。
+   以「右侧抽屉」呈现，而不是模态对话框：星系保持可见、可交互。
+   全部使用 music-search-* 命名，避免影响其它模块的样式。
+   玻璃质感（底色 + 模糊 + 描边 + 边缘渐隐）由 glass-ui.css 提供。 */
+
+.bridge-spin { animation: music-search-spin .9s linear infinite; }
+@keyframes music-search-spin { to { transform: rotate(360deg); } }
+
+.music-search-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  width: min(560px, 100vw);
+  display: flex;
+  flex-direction: column;
+  color: inherit;
+  animation: music-search-drawer-in .28s ease-out;
+}
+
+@keyframes music-search-drawer-in {
+  from { transform: translateX(26px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .music-search-drawer { animation: none; }
+}
+
+.music-search-shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 15px;
+  overflow-y: auto;
+  padding: 26px 28px 24px;
+  font-size: 12px;
+}
+
+.music-search-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.music-search-head .eyebrow { display: block; font-family: 'Space Grotesk', sans-serif; font-size: 8px; letter-spacing: 1.9px; color: #a08a63; }
+.music-search-head h2 { margin: 8px 0 0; font-size: 23px; font-weight: 400; letter-spacing: .4px; color: #ecdfc9; }
+.music-search-intro { margin: 0; font-size: 11px; line-height: 1.8; color: #8b9aa4; }
+
+.music-search-status {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; padding: 9px 13px;
+  border: 1px solid #bdcad32b; border-radius: 9px;
+  background: #0c1a2a99; font-size: 10px; color: #93a3ad;
+}
+.music-search-status.is-ready { border-color: #8fbf8a47; color: #b6d7b2; }
+.music-search-status.is-warn { border-color: #d9b26a52; color: #ddc088; }
+.music-search-status svg { flex-shrink: 0; }
+
+.music-search-form { display: flex; flex-direction: column; gap: 8px; }
+.music-search-form > label { font-size: 9px; letter-spacing: 1.2px; color: #8b9aa4; text-transform: uppercase; }
+.music-search-field {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 6px 5px 13px;
+  border: 1px solid #bdcad32e; border-radius: 11px;
+  background: #081120cc;
+}
+.music-search-field > svg { flex-shrink: 0; color: #7d8f9b; }
+.music-search-field input {
+  flex: 1; min-width: 0; padding: 9px 0;
+  border: 0; background: transparent; color: #e6ebe9; font-size: 13px; font-family: inherit;
+}
+.music-search-field input:focus { outline: none; }
+.music-search-field input::placeholder { color: #5e6f7b; }
+
+.music-search-error { margin: 0; padding: 9px 12px; border: 1px solid #d4796a55; border-radius: 9px; background: #3a151226; color: #eab3a6; font-size: 11px; }
+
+.music-search-meta { font-size: 9px; letter-spacing: .6px; color: #7e909b; }
+
+.music-search-results { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.music-search-item {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 13px;
+  padding: 9px 12px;
+  border: 1px solid #bdcad321; border-radius: 11px;
+  background: #0b1725a6;
+  transition: border-color .2s, background .2s;
+}
+.music-search-item:hover { border-color: #d7bc8952; background: #12202fa6; }
+.music-search-cover {
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; flex-shrink: 0; overflow: hidden;
+  border: 1px solid #91a6b32e; border-radius: 8px;
+  background: #12202e; color: #7d8f9b;
+}
+.music-search-cover img { width: 100%; height: 100%; object-fit: cover; }
+.music-search-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.music-search-copy strong { font-size: 12px; font-weight: 400; color: #e2e8e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.music-search-copy span { font-size: 10px; color: #94a4ae; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.music-search-copy small { font-size: 9px; color: #6f8290; }
+
+.music-search-play, .music-search-button, .music-search-url-go {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 13px;
+  border: 1px solid #baa78e66; border-radius: 9px;
+  background: #9e846a24; color: #d8c6ab;
+  font-size: 10px; font-family: inherit; cursor: pointer;
+  transition: background .18s, border-color .18s, color .18s;
+  white-space: nowrap;
+}
+.music-search-play:hover:not(:disabled), .music-search-button:hover:not(:disabled), .music-search-url-go:hover:not(:disabled) { border-color: #e3c994; background: #b99a7438; color: #f4e4c8; }
+.music-search-play:disabled, .music-search-button:disabled, .music-search-url-go:disabled { opacity: .5; cursor: progress; }
+.music-search-play:focus-visible, .music-search-button:focus-visible, .music-search-url-go:focus-visible { outline: 2px solid #ffdfa2; outline-offset: 2px; }
+.music-search-more { align-self: flex-start; }
+
+.music-search-import { display: grid; grid-template-columns: 1fr; gap: 16px; padding-top: 4px; border-top: 1px solid #bdcad31f; }
+.music-search-import > div { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; padding-top: 14px; }
+.music-search-import p { margin: 0; font-size: 10px; line-height: 1.75; color: #8496a1; }
+.music-search-label { display: inline-flex; align-items: center; gap: 6px; font-size: 9px; letter-spacing: 1.1px; color: #a08a63; text-transform: uppercase; }
+
+.music-search-url { display: flex; align-items: center; gap: 7px; width: 100%; }
+.music-search-url input {
+  flex: 1; min-width: 0; padding: 9px 11px;
+  border: 1px solid #bdcad32b; border-radius: 9px;
+  background: #081120cc; color: #e5eae8; font-size: 11px; font-family: inherit;
+}
+.music-search-url input::placeholder { color: #5e6f7b; }
+
+.music-search-notice { margin: 0; padding: 9px 12px; border: 1px solid #d7bc8940; border-radius: 9px; background: #1d1a0f4d; color: #ddc79b; font-size: 11px; line-height: 1.7; }
+.music-search-notice.is-error { border-color: #d4796a55; background: #3a151226; color: #eab3a6; }
+
+/* 底部播放器在真实音频没有封面时的占位块，尺寸对齐 .player-track img。 */
+.player-track .player-cover {
+  width: 38px; height: 38px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #91a6b321; border-radius: 6px;
+  background: #12202e; color: #7d8f9b;
+}
+
+.music-search-now {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 13px;
+  padding: 11px 14px;
+  border: 1px solid #bdcad32b; border-radius: 12px;
+  background: linear-gradient(120deg, #16243ba6, #0b1725cc);
+}
+.music-search-transport { display: flex; align-items: center; }
+.music-search-transport .player-toggle { border-color: #baa78e77; background: #9e846a28; color: #d2c0a8; }
+.music-search-transport .player-toggle:disabled { opacity: .45; cursor: default; }
+.music-search-scrub { grid-column: 1 / -1; display: flex; align-items: center; gap: 11px; }
+.music-search-scrub time { flex-shrink: 0; font-size: 9px; color: #8fa1ad; font-variant-numeric: tabular-nums; }
+.music-search-scrub input[type='range'] {
+  flex: 1; min-width: 80px; height: 3px;
+  appearance: none; -webkit-appearance: none;
+  border-radius: 2px; cursor: pointer;
+  background: linear-gradient(90deg, #d7bc89 var(--progress, 0%), #4a5f7040 var(--progress, 0%));
+}
+.music-search-scrub input[type='range']::-webkit-slider-thumb { -webkit-appearance: none; width: 11px; height: 11px; border: 0; border-radius: 50%; background: #e9d5b1; }
+.music-search-scrub input[type='range']::-moz-range-thumb { width: 11px; height: 11px; border: 0; border-radius: 50%; background: #e9d5b1; }
+.music-search-scrub input[type='range']:disabled { cursor: default; opacity: .45; }
+
+@media (max-width: 700px) {
+  .music-search-shell { padding: 22px 18px 20px; }
+  .music-search-item { grid-template-columns: 38px minmax(0, 1fr); row-gap: 9px; }
+  .music-search-item .music-search-play { grid-column: 2; justify-self: start; }
+  .music-search-cover { width: 38px; height: 38px; }
+}

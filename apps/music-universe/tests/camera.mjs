@@ -1,0 +1,319 @@
+import { chromium, expect } from '@playwright/test'
+import assert from 'node:assert/strict'
+import { writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { dismissEntryGuide } from './entry-guide.mjs'
+import { Quaternion, Vector3 } from 'three'
+
+const url = process.env.TEST_URL || 'http://127.0.0.1:5188/'
+const browser = await chromium.launch({ headless: true, args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] })
+const page = await browser.newPage({ viewport: { width: 1600, height: 900 } })
+const output = path.resolve(process.env.TEST_OUTPUT_DIR || '..'), checks = [], errors = []
+const state = (target = page) => target.locator('canvas').evaluate(element => ({ ...element.dataset }))
+const background = (target = page) => target.locator('.space-motion-backdrop').evaluate(element => ({ ...element.dataset, transform: getComputedStyle(element).transform }))
+const position = data => new Vector3(Number(data.cameraX), Number(data.cameraY), Number(data.cameraZ))
+const orientation = data => new Quaternion(...JSON.parse(data.cameraQuaternion))
+const angleDifference = (before, after) => 1 - Math.abs(orientation(before).dot(orientation(after)))
+function trackErrors(target) {
+  target.on('pageerror', error => errors.push(error.message))
+  target.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
+}
+trackErrors(page)
+async function ready(target = page) {
+  await target.goto(url, { waitUntil: 'networkidle' })
+  await target.locator('.scene-loading').waitFor({ state: 'detached', timeout: 45000 })
+  await dismissEntryGuide(target)
+  await expect(target.locator('canvas')).toHaveAttribute('data-camera-mode', 'orbit')
+  await expect(target.locator('.space-motion-backdrop')).toHaveCount(1)
+  await expect.poll(async () => Number((await state(target)).frameCount), { timeout: 20000 }).toBeGreaterThan(1)
+}
+async function settle(target = page) {
+  await expect.poll(async () => (await state(target)).cameraMoving, { timeout: 25000 }).toBe('false')
+}
+async function pause(target = page) {
+  await target.locator('canvas').focus()
+  if ((await state(target)).playing === 'true') await target.keyboard.press('Space')
+  await expect(target.locator('canvas')).toHaveAttribute('data-playing', 'false')
+  await expect(target.locator('canvas')).toHaveAttribute('data-camera-drifting', 'false')
+  await settle(target)
+}
+async function reset(target = page) {
+  await target.locator('canvas').focus()
+  const frames = Number((await state(target)).frameCount)
+  await target.keyboard.press('k')
+  await expect.poll(async () => Number((await state(target)).frameCount), { timeout: 10000 }).toBeGreaterThan(frames)
+  await expect(target.locator('canvas')).toHaveAttribute('data-camera-mode', 'orbit')
+  await expect.poll(async () => Number((await state(target)).zoom), { timeout: 10000 }).toBe(1)
+  await settle(target)
+}
+async function hideTools(target = page) {
+  if (await target.locator('.universe-hud').getAttribute('inert') === null) {
+    await target.locator('canvas').focus()
+    await target.keyboard.press('h')
+  }
+  await expect(target.locator('.universe-hud')).toHaveAttribute('inert', '')
+}
+async function blank(target = page) {
+  const viewport = target.viewportSize()
+  const nodes = JSON.parse((await state(target)).projectedTargets)
+  const candidates = [.17, .23, .30].flatMap(y => [.42, .55, .72].map(x => ({ x: x * viewport.width, y: y * viewport.height })))
+  const found = candidates.find(point => nodes.every(node => Math.hypot(point.x - node.x, point.y - node.y) > node.radius + 85))
+  assert.ok(found, 'A blank part of the canvas must remain available for camera gestures')
+  return found
+}
+async function hold(key, condition, target = page) {
+  await target.keyboard.down(key)
+  try { await expect.poll(condition, { timeout: 25000 }).toBeGreaterThan(0.32) }
+  finally { await target.keyboard.up(key) }
+  await settle(target)
+}
+async function assertFrozen(before, target = page) {
+  await target.waitForTimeout(220)
+  const after = await state(target)
+  assert.ok(position(before).distanceTo(position(after)) < 1e-5)
+  assert.ok(angleDifference(before, after) < 1e-9)
+  assert.equal(after.playing, 'false')
+}
+
+try {
+  await ready()
+  // 默认已改为显示工具界面，这里显式进入沉浸模式，保持用例原意。
+  await hideTools()
+  await expect(page.locator('.universe-hud')).toHaveAttribute('inert', '')
+  const imageInfo = await page.locator('.space-motion-backdrop').evaluate(async element => {
+    const child = element.querySelector('img')
+    const css = getComputedStyle(element).backgroundImage
+    const source = child?.src || css.match(/url\(["']?(.+?)["']?\)/)?.[1]
+    if (!source) throw new Error('Reference background image was not attached to the backdrop')
+    const image = new Image()
+    image.src = source
+    await image.decode()
+    return { url: image.src, width: image.naturalWidth, height: image.naturalHeight }
+  })
+  assert.equal(new URL(imageInfo.url).origin, new URL(url).origin)
+  assert.ok(imageInfo.width >= 512 && imageInfo.height >= 512)
+  const response = await page.request.get(imageInfo.url)
+  assert.equal(response.status(), 200)
+  assert.match(response.headers()['content-type'], /^image\//)
+  assert.equal((await state()).sceneObjectCount, '11')
+  checks.push('The reference nebula image loads from the app itself behind the pure full-screen eleven-object galaxy')
+
+  await expect(page.locator('canvas')).toHaveAttribute('data-camera-drifting', 'true')
+  const driftBefore = await state()
+  assert.equal(driftBefore.cameraAutoFollowing, 'true')
+  assert.ok(Number(driftBefore.cameraFollowSpeed) > 0 && Number(driftBefore.cameraFollowSpeed) <= .0075)
+  await expect.poll(async () => position(driftBefore).distanceTo(position(await state())), { timeout: 25000 }).toBeGreaterThan(.003)
+  assert.equal((await state()).cameraMoving, 'false')
+  const zoomBefore = await state()
+  await page.mouse.move(180, 220)
+  await page.mouse.wheel(0, -120)
+  await expect(page.locator('canvas')).toHaveAttribute('data-camera-moving', 'true')
+  await expect(page.locator('canvas')).toHaveAttribute('data-camera-drifting', 'false')
+  const zoomPose = await state()
+  const heldPhase = zoomPose.cameraFollowPhase
+  for (const pixels of [-16, 16, -16]) {
+    await page.mouse.wheel(0, pixels)
+    await page.waitForTimeout(120)
+    const zooming = await state()
+    assert.equal(zooming.cameraDrifting, 'false')
+    assert.equal(zooming.cameraAutoFollowing, 'false')
+    assert.equal(zooming.cameraFollowPhase, heldPhase)
+    assert.equal(zooming.playing, 'true')
+    assert.equal(zooming.viewCenterX, zoomBefore.viewCenterX)
+    assert.equal(zooming.viewCenterY, zoomBefore.viewCenterY)
+    assert.ok(angleDifference(zoomPose, zooming) < 1e-9)
+  }
+  const zoomAfter = await state()
+  const simulationDelta = Number(zoomAfter.simulationTime) - Number(zoomBefore.simulationTime)
+  assert.ok(simulationDelta > 0)
+  const spinDelta = Number(zoomAfter.worldSpinZ) - Number(zoomBefore.worldSpinZ)
+  assert.ok(Math.abs(spinDelta - simulationDelta * .05) < .00001, 'Wheel input must not reset or rescale the accumulated galaxy spin')
+  await settle()
+  await expect.poll(async () => (await state()).cameraAutoFollowing, { timeout: 20000 }).toBe('true')
+  checks.push('Wheel zoom holds the center and orientation, preserves accumulated galaxy spin, and resumes slow automatic following after the idle delay')
+  await page.keyboard.press('h')
+  await expect(page.locator('.universe-hud')).not.toHaveAttribute('inert', '')
+  await expect(page.locator('canvas')).toHaveAttribute('data-camera-auto-following', 'false')
+  const toolsPose = await state()
+  await page.waitForTimeout(350)
+  const toolsStill = await state()
+  assert.equal(toolsStill.playing, 'true')
+  assert.equal(toolsStill.cameraFollowPhase, toolsPose.cameraFollowPhase)
+  assert.ok(angleDifference(toolsPose, toolsStill) < 1e-9)
+  await page.keyboard.press('h')
+  await expect(page.locator('.universe-hud')).toHaveAttribute('inert', '')
+  await expect.poll(async () => (await state()).cameraAutoFollowing, { timeout: 15000 }).toBe('true')
+  const resumed = await state()
+  assert.ok(Number(resumed.cameraFollowPhase) >= Number(toolsStill.cameraFollowPhase))
+  assert.ok(Number(resumed.cameraFollowPhase) - Number(toolsStill.cameraFollowPhase) < .015)
+  checks.push('Automatic following is confined to immersive playback; opening tools freezes the exact pose and returning resumes without catching up or jumping')
+  await pause()
+  await reset()
+  const frozen = await state()
+  await assertFrozen(frozen)
+  checks.push('Cinematic drift moves the camera independently of manual-motion diagnostics and freezes when animation is paused')
+
+  const origin = await blank()
+  const beforeOrbit = await state(), beforeBackdrop = await background()
+  await page.mouse.move(origin.x, origin.y)
+  await page.mouse.down()
+  await page.mouse.move(origin.x + 140, origin.y + 30)
+  await page.mouse.up()
+  await expect.poll(async () => Math.abs(Number((await state()).cameraTheta) - Number(beforeOrbit.cameraTheta)), { timeout: 20000 }).toBeGreaterThan(.85)
+  await settle()
+  const afterOrbit = await state()
+  assert.ok(Math.abs(Number(afterOrbit.cameraPhi) - Number(beforeOrbit.cameraPhi)) > .05)
+  assert.equal(afterOrbit.cameraMode, 'orbit')
+  assert.equal(afterOrbit.playing, 'false')
+  await expect.poll(async () => Math.abs(Number((await background()).rotation) - Number(beforeBackdrop.rotation)), { timeout: 20000 }).toBeGreaterThan(.5)
+  const afterBackdrop = await background()
+  assert.ok(Math.abs(Number(afterBackdrop.rotation)) <= 10.001)
+  assert.ok([afterBackdrop.parallaxX, afterBackdrop.parallaxY, afterBackdrop.scale].every(value => Number.isFinite(Number(value))))
+  assert.ok(Number(afterBackdrop.scale) >= 1.08 && Number(afterBackdrop.scale) <= 1.301)
+  await page.screenshot({ path: path.join(output, 'music-universe-camera-orbit.png') })
+  checks.push('Dragging empty space orbits with release inertia and moves and rotates the backdrop while the scene is paused')
+
+  await reset()
+  const point = await blank()
+  let previousZoom = Number((await state()).zoom)
+  for (const pixels of [-16, -16, -16, 24]) {
+    await page.mouse.move(point.x, point.y)
+    await page.mouse.wheel(0, pixels)
+    const expected = previousZoom * Math.exp(pixels * .0011)
+    await expect.poll(async () => Math.abs(Number((await state()).zoom) - expected), { timeout: 10000 }).toBeLessThan(.0001)
+    assert.ok(Math.abs(expected - previousZoom) < .04)
+    previousZoom = expected
+  }
+  await settle()
+  assert.equal((await state()).viewMode, 'continuous')
+  assert.equal((await state()).sceneObjectCount, '11')
+  assert.equal((await state()).flightVisible, 'true')
+  await reset()
+  checks.push('Small wheel deltas remain continuous and reversible while manual orbit and the new background retain the whole scene')
+
+  const freeOrigin = await state()
+  await page.keyboard.press('r')
+  await expect(page.locator('canvas')).toHaveAttribute('data-camera-mode', 'free')
+  const freeStart = await state()
+  assert.ok(position(freeStart).distanceTo(position(freeOrigin)) < .003)
+  assert.ok(angleDifference(freeOrigin, freeStart) < 1e-7)
+  for (const [key, local] of [['w', [0, 0, -1]], ['s', [0, 0, 1]], ['a', [-1, 0, 0]], ['d', [1, 0, 0]]]) {
+    const before = await state()
+    const axis = new Vector3(...local).applyQuaternion(orientation(before))
+    await hold(key, async () => position(await state()).sub(position(before)).dot(axis))
+  }
+  const boostBefore = await state()
+  const forward = new Vector3(0, 0, -1).applyQuaternion(orientation(boostBefore))
+  await page.keyboard.down('Shift')
+  await hold('w', async () => position(await state()).sub(position(boostBefore)).dot(forward) / 3)
+  await page.keyboard.up('Shift')
+  const upBefore = await state()
+  await hold('Space', async () => Number((await state()).cameraY) - Number(upBefore.cameraY))
+  assert.equal((await state()).playing, 'false')
+  const downBefore = await state()
+  await hold('Control', async () => Number(downBefore.cameraY) - Number((await state()).cameraY))
+  const rollBefore = Number((await state()).cameraRoll)
+  await hold('q', async () => Number((await state()).cameraRoll) - rollBefore)
+  const rolled = Number((await state()).cameraRoll)
+  await hold('e', async () => rolled - Number((await state()).cameraRoll))
+  const lookBefore = await state()
+  await page.mouse.move(920, 410, { steps: 4 })
+  await expect.poll(async () => angleDifference(lookBefore, await state()), { timeout: 15000 }).toBeGreaterThan(.00001)
+  const fovBefore = Number((await state()).cameraFov)
+  await page.mouse.wheel(0, 120)
+  await expect.poll(async () => Number((await state()).cameraFov) - fovBefore, { timeout: 15000 }).toBeGreaterThan(1)
+  assert.ok(Number((await state()).cameraFov) >= 26 && Number((await state()).cameraFov) <= 72)
+  await settle()
+  await page.screenshot({ path: path.join(output, 'music-universe-camera-free.png') })
+  checks.push('R preserves the exact current pose; WASD, Shift, Space/Ctrl, Q/E, mouse look and wheel FOV control the free camera without toggling animation')
+
+  await reset()
+  assert.ok(page.url().startsWith(url))
+  assert.ok(Math.abs(Number((await state()).cameraTheta)) < .001)
+  assert.ok(Math.abs(Number((await state()).cameraPhi)) < .001)
+  assert.ok(Math.abs(Number((await state()).cameraRoll)) < .001)
+  assert.ok(Math.abs(Number((await state()).cameraFov) - 36) < .001)
+  await page.keyboard.press('r')
+  await expect(page.locator('canvas')).toHaveAttribute('data-camera-mode', 'free')
+  const beforeEscape = await state()
+  await hold('d', async () => position(await state()).distanceTo(position(beforeEscape)))
+  await page.keyboard.press('Escape')
+  await expect(page.locator('canvas')).toHaveAttribute('data-camera-mode', 'orbit')
+  await settle()
+  assert.ok(page.url().startsWith(url))
+  checks.push('K and Escape smoothly return free flight to the horizontal baseline without navigating to the hall')
+
+  await page.keyboard.press('r')
+  await expect(page.locator('canvas')).toHaveAttribute('data-camera-mode', 'free')
+  await page.keyboard.press('h')
+  await expect(page.locator('.universe-hud')).not.toHaveAttribute('inert', '')
+  await expect(page.locator('canvas')).toHaveAttribute('data-camera-mode', 'orbit')
+  await settle()
+  const nativeBefore = await state()
+  await page.getByRole('textbox', { name: '星系 Seed', exact: true }).focus()
+  for (const key of ['r', 'k', 'w', 'a', 's', 'd', 'q', 'e', 'Space', 'ArrowRight']) await page.keyboard.press(key)
+  assert.equal((await state()).cameraMode, 'orbit')
+  assert.equal((await state()).focusTarget, nativeBefore.focusTarget)
+  await assertFrozen(nativeBefore)
+  await page.getByRole('button', { name: '编辑专辑', exact: true }).click()
+  const dialogBefore = await state()
+  await page.keyboard.press('r')
+  await page.keyboard.press('k')
+  await page.keyboard.press('Space')
+  await assertFrozen(dialogBefore)
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.editor-dialog')).toHaveCount(0)
+  await hideTools()
+  checks.push('Opening tools exits free flight; seed inputs and the album editor retain native keys and never activate camera shortcuts')
+
+  const resizeBefore = await state()
+  await page.setViewportSize({ width: 1100, height: 760 })
+  await expect(page.locator('canvas')).toHaveJSProperty('clientWidth', 1100)
+  await settle()
+  assert.equal((await state()).zoom, resizeBefore.zoom)
+  assert.equal((await state()).cameraMode, 'orbit')
+  assert.equal((await state()).sceneObjectCount, '11')
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight), false)
+  checks.push('Viewport resize preserves camera mode, continuous zoom and all scene objects without overflow')
+
+  const mobileContext = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 1 })
+  const mobile = await mobileContext.newPage()
+  trackErrors(mobile)
+  await ready(mobile)
+  await pause(mobile)
+  const mobileBefore = await state(mobile)
+  const session = await mobileContext.newCDPSession(mobile)
+  const touch = (type, points) => session.send('Input.dispatchTouchEvent', { type, touchPoints: points })
+  const midpoint = { x: 195, y: 160 }
+  const points = width => [{ x: midpoint.x - width / 2, y: midpoint.y, id: 1 }, { x: midpoint.x + width / 2, y: midpoint.y, id: 2 }]
+  await touch('touchStart', points(80))
+  let lastZoom = Number(mobileBefore.zoom)
+  for (const width of [96, 112, 128]) {
+    await touch('touchMove', points(width))
+    await expect.poll(async () => Number((await state(mobile)).zoom), { timeout: 15000 }).toBeLessThan(lastZoom)
+    lastZoom = Number((await state(mobile)).zoom)
+  }
+  await touch('touchMove', points(112))
+  await expect.poll(async () => Number((await state(mobile)).zoom), { timeout: 15000 }).toBeGreaterThan(lastZoom)
+  await touch('touchCancel', [])
+  await settle(mobile)
+  const mobileAfter = await state(mobile)
+  assert.ok(Math.abs(Number(mobileAfter.cameraTheta) - Number(mobileBefore.cameraTheta)) < .0001)
+  assert.ok(Math.abs(Number(mobileAfter.cameraPhi) - Number(mobileBefore.cameraPhi)) < .0001)
+  assert.equal(mobileAfter.playing, 'false')
+  assert.equal(mobileAfter.cameraMode, 'orbit')
+  assert.equal(mobileAfter.sceneObjectCount, '11')
+  await assertFrozen(mobileAfter, mobile)
+  assert.equal(await mobile.evaluate(() => document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight), false)
+  await mobile.screenshot({ path: path.join(output, 'music-universe-camera-mobile.png') })
+  await mobileContext.close()
+  checks.push('Real mobile pinch scales continuously in both directions and cancels without orbit fling, accidental playback or overflow')
+
+  assert.deepEqual(errors, [])
+  await writeFile(path.join(output, 'music-universe-camera-report.json'), JSON.stringify({ url, passed: true, checks, errors }, null, 2))
+  console.log(JSON.stringify({ passed: true, checks, errors }, null, 2))
+} catch (error) {
+  await page.screenshot({ path: path.join(output, 'music-universe-camera-failure.png') }).catch(() => {})
+  await writeFile(path.join(output, 'music-universe-camera-report.json'), JSON.stringify({ url, passed: false, checks, errors, failure: String(error) }, null, 2))
+  throw error
+} finally { await browser.close() }

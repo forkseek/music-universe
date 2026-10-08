@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const root = process.cwd();
-const source = path.resolve(process.env.MUSIC_UNIVERSE_SOURCE || process.argv[2] || path.join(root, '../../music-universe'));
+const source = path.resolve(process.env.MUSIC_UNIVERSE_SOURCE || process.argv[2] || path.join(root, 'apps/music-universe'));
 const destination = path.join(root, 'public/universe');
 if (path.dirname(destination) !== path.join(root, 'public')) throw new Error('Invalid universe destination');
 if (!existsSync(path.join(source, 'package.json'))) {
@@ -24,6 +24,13 @@ const dist = path.join(source, 'dist');
 const entry = readFileSync(path.join(dist, 'index.html'), 'utf8');
 if (!entry.includes('/universe/assets/')) throw new Error('Expected a build with base=/universe/.');
 mkdirSync(destination, { recursive: true });
+// Remove superseded hashed bundles only; do not accumulate old JS on every release.
+const assetDirectory = path.join(destination, 'assets');
+if (existsSync(assetDirectory)) {
+  for (const item of readdirSync(assetDirectory, { withFileTypes: true })) {
+    if (item.isFile() && !existsSync(path.join(dist, 'assets', item.name))) rmSync(path.join(assetDirectory, item.name));
+  }
+}
 cpSync(dist, destination, { recursive: true });
 // Public fonts are not transformed by Vite. Keep their URLs relative to this stylesheet.
 const fonts = path.join(destination, 'fonts/fonts.css');

@@ -1,0 +1,45 @@
+/* =========================================================================
+   companion-dock.css —— 左侧旅伴机器人的自由摆放与收缩
+   -------------------------------------------------------------------------
+   默认位置仍由 styles.css 的 .hall-relay{left:44px;bottom:126px} 及各断点给出；
+   用户一旦拖动过，位置就由内联 left/top 接管（bottom:auto），媒体查询不再生效。
+   .is-collapsed 把整块入口收成一个圆形图标浮窗。
+   ========================================================================= */
+
+/* 机器人本体 + 收缩按钮排成一行；旅伴抽屉是绝对定位，不参与这行排版。 */
+.hall-relay{display:flex;align-items:center;gap:8px}
+
+/* 拖动：本体作为把手，禁止原生长按选择与触摸滚动抢占。 */
+.companion-trigger{cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.companion-trigger:active{cursor:grabbing}
+.hall-relay.is-dragging .companion-trigger{cursor:grabbing}
+/* 拖动中关掉抽屉过渡：跟随手指时不需要缓动，否则会拖出橡皮筋手感。 */
+.hall-relay.is-dragging .hall-panel{transition:none}
+
+/* 抽屉翻边：默认在机器人上方；贴近屏幕顶部时翻到下方，贴近右缘时右对齐。 */
+.hall-relay.flip-y .hall-panel{bottom:auto;top:calc(100% + 13px)}
+.hall-relay.flip-x .hall-panel{left:auto;right:0}
+/* 用 --dock-room（由 useCompanionDock 写入）限制抽屉高度，保证翻边后也留在视口内。 */
+.hall-relay .hall-panel{max-height:max(160px,min(560px,var(--dock-room,560px)))}
+
+/* 收缩按钮：常驻的小圆钮，展开态是「收缩」，收缩态是「展开」。 */
+.companion-collapse{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:24px;height:24px;border:1px solid #d7bc8926;border-radius:50%;background:#0d172177;backdrop-filter:blur(12px);color:#a48f6e;transition:border-color .18s ease,background .18s ease,color .18s ease}
+.companion-collapse:hover,.companion-collapse:focus-visible{border-color:#d7bc8955;background:#1e251fcc;color:#e2c795}
+
+/* 收缩态：只留头像，入口变成一个小圆浮窗。 */
+.hall-relay.is-collapsed .companion-trigger{padding:8px;gap:0;border-radius:50%}
+.hall-relay.is-collapsed .companion-trigger>span:nth-child(2),
+.hall-relay.is-collapsed .companion-trigger>svg{display:none}
+.hall-relay.is-collapsed .hall-panel{display:none}
+/* 收缩 / 展开时给尺寸变化一点过渡，避免生硬跳变。 */
+.companion-trigger{transition:padding .26s ease,border-radius .26s ease}
+
+@media(max-width:800px){
+  .hall-relay{gap:6px}
+  .hall-relay.is-collapsed .companion-trigger{padding:7px}
+}
+
+@media(max-width:620px){
+  .companion-collapse{width:22px;height:22px}
+  .hall-relay.is-collapsed .companion-trigger{padding:6px}
+}

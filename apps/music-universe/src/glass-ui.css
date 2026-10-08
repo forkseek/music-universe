@@ -1,0 +1,409 @@
+/* =========================================================================
+   glass-ui.css — 交互层「毛玻璃」皮肤
+   -------------------------------------------------------------------------
+   目标：把 HUD / 面板 / 弹层等交互 UI 统一改成毛玻璃质感，并让玻璃的边缘
+        做渐变淡出，避免生硬边界。
+
+   做法：
+   1) 把「底色 + backdrop blur + 描边」从元素本身下沉到 ::before 伪元素，
+      元素自身背景置透明；内容（文字 / 图标）留在内容层，因此不会被淡化。
+   2) 用两层线性渐变取交集（mask-composite: intersect）作为 ::before 的
+      mask，让玻璃在四条边处各渐隐一段宽度；mask 只作用在玻璃层，
+      不影响任何文字与图标。
+   3) 需要定位上下文才能让 ::before 贴合自身尺寸的静态元素补上 position:relative。
+
+   选择器统一用 .app-shell 前缀提高优先级，避免与已压缩的 styles.css 抢占，
+   也保证与音乐搜索面板( music-search.css )的覆盖关系稳定。
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   1. 面板 / 浮层：清掉原有的实底、描边、模糊与投影
+   ------------------------------------------------------------------------- */
+.app-shell :is(
+  .track-index,
+  .control-bar,
+  .hall-panel,
+  .companion-rooms,
+  .play-queue,
+  .planet-detail,
+  .quality-menu,
+  .restore-hud,
+  .camera-mode-toggle,
+  .companion-trigger,
+  .quality-trigger,
+  .site-header
+) {
+  --glass-blur: 20px;
+  --glass-fade: 16px;
+  --glass-tint-a: rgba(20, 32, 50, .5);
+  --glass-tint-b: rgba(9, 17, 28, .6);
+  --glass-ring: rgba(196, 209, 219, .12);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: 0 24px 78px rgba(0, 0, 0, .15);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  isolation: isolate;
+}
+
+/* 顶部栏：底色更淡，避免压住场景 */
+.app-shell .site-header {
+  --glass-blur: 14px;
+  --glass-fade: 16px;
+  --glass-tint-a: rgba(12, 21, 34, .38);
+  --glass-tint-b: rgba(7, 13, 22, .24);
+  --glass-ring: rgba(190, 203, 213, .08);
+  box-shadow: none;
+}
+
+/* 小尺寸胶囊 / 圆钮：模糊与渐隐收窄，避免整体被淡掉 */
+.app-shell .camera-mode-toggle { --glass-blur: 14px; --glass-fade: 9px; }
+.app-shell .restore-hud       { --glass-blur: 14px; --glass-fade: 10px; }
+.app-shell .quality-trigger   { --glass-blur: 12px; --glass-fade: 7px; }
+.app-shell :is(.planet-detail, .quality-menu, .companion-trigger, .play-queue, .companion-rooms) { --glass-fade: 13px; }
+
+/* 需要定位上下文的静态元素 */
+.app-shell :is(.control-bar, .companion-trigger, .quality-trigger) { position: relative; }
+
+/* -------------------------------------------------------------------------
+   2. 弹层 / 侧边抽屉：玻璃层挂在容器自身，避免内部滚动把玻璃带走
+   ------------------------------------------------------------------------- */
+.app-shell .guide-dialog {
+  --glass-blur: 24px;
+  --glass-fade: 16px;
+  --glass-tint-a: rgba(20, 32, 50, .56);
+  --glass-tint-b: rgba(9, 17, 28, .64);
+  --glass-ring: rgba(196, 209, 219, .12);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: 0 30px 120px rgba(0, 0, 0, .3);
+  isolation: isolate;
+}
+
+/* 右侧抽屉（专辑工坊 / 音乐搜索）：贴屏一侧保留阴影，只在朝向页面的一侧渐隐 */
+.app-shell :is(.editor-dialog, .music-search-drawer) {
+  --glass-blur: 24px;
+  --glass-fade: 16px;
+  --glass-tint-a: rgba(20, 32, 50, .56);
+  --glass-tint-b: rgba(9, 17, 28, .64);
+  --glass-ring: rgba(196, 209, 219, .12);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: -26px 0 130px rgba(0, 0, 0, .34);
+  isolation: isolate;
+}
+.app-shell .editor-dialog { overflow: hidden; }
+
+/* 弹层内部的实底容器让位给玻璃层 */
+.app-shell .music-search-shell { background: transparent; }
+.app-shell .editor-panel {
+  background: transparent;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* -------------------------------------------------------------------------
+   3. 玻璃层本体（各目标共用，不含 mask）
+   ------------------------------------------------------------------------- */
+.app-shell :is(
+  .track-index,
+  .control-bar,
+  .hall-panel,
+  .companion-rooms,
+  .play-queue,
+  .planet-detail,
+  .quality-menu,
+  .restore-hud,
+  .camera-mode-toggle,
+  .companion-trigger,
+  .quality-trigger,
+  .site-header,
+  .music-search-drawer,
+  .guide-dialog,
+  .editor-dialog
+)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(150deg, var(--glass-tint-a), var(--glass-tint-b));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate, 1.4));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate, 1.4));
+  box-shadow: inset 0 0 0 1px var(--glass-ring), inset 0 1px 0 rgba(255, 255, 255, .06);
+  pointer-events: none;
+}
+
+/* -------------------------------------------------------------------------
+   4. 边缘渐隐：两层线性渐变取交集 → 四条边各渐隐 --glass-fade 宽度
+      仅在支持 mask-composite 时启用；不支持则退化为无 mask 的普通玻璃。
+   ------------------------------------------------------------------------- */
+@supports (mask-composite: intersect) or (-webkit-mask-composite: source-in) {
+  .app-shell :is(
+    .track-index,
+    .control-bar,
+    .hall-panel,
+    .companion-rooms,
+    .play-queue,
+    .planet-detail,
+    .quality-menu,
+    .restore-hud,
+    .camera-mode-toggle,
+    .companion-trigger,
+    .quality-trigger,
+    .site-header,
+    .music-search-drawer,
+    .guide-dialog,
+    .editor-dialog
+  )::before {
+    mask-image:
+      linear-gradient(to right, transparent 0, #000 var(--glass-fade), #000 calc(100% - var(--glass-fade)), transparent 100%),
+      linear-gradient(to bottom, transparent 0, #000 var(--glass-fade), #000 calc(100% - var(--glass-fade)), transparent 100%);
+    mask-composite: intersect;
+    -webkit-mask-image:
+      linear-gradient(to right, transparent 0, #000 var(--glass-fade), #000 calc(100% - var(--glass-fade)), transparent 100%),
+      linear-gradient(to bottom, transparent 0, #000 var(--glass-fade), #000 calc(100% - var(--glass-fade)), transparent 100%);
+    -webkit-mask-composite: source-in;
+  }
+}
+
+/* 侧边抽屉：只在朝向页面的一侧渐隐，上 / 下 / 右沿贴合屏幕 */
+.app-shell :is(.editor-dialog, .music-search-drawer)::before {
+  mask-image: linear-gradient(to right, transparent 0, #000 30px, #000 100%);
+  mask-composite: add;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 30px, #000 100%);
+  -webkit-mask-composite: source-over;
+}
+
+/* NARROW-HEADER-FIX：顶部导航新增「音乐搜索」后，窄屏（320/375px 实测）默认间距会让
+   「全屏查看星系」按钮越出标题栏的左右内缩边界 4–10px。收紧间距，并允许品牌在
+   极端宽度下收缩截断，保证该按钮始终落在标题栏内而不产生页面横向溢出。 */
+@media (max-width: 620px) {
+  .app-shell .site-header { gap: 10px }
+  .app-shell .site-header nav { gap: 10px }
+  .app-shell .site-header .brand { flex-shrink: 1; min-width: 0 }
+  .app-shell .site-header .brand > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+}
+@media (max-width: 380px) {
+  .app-shell .site-header { left: 10px; right: 10px; gap: 8px }
+  .app-shell .site-header nav { gap: 6px }
+}
+
+/* RATING-SOURCE：评分来自真实大众数据源时的来源标注。dd 处于 nowrap 的窄列，
+   因此让标注另起一行，避免把详情面板撑出横向溢出。 */
+.app-shell .detail-metrics .rating-source {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  letter-spacing: .4px;
+  color: #7f93a8;
+  white-space: normal;
+}
+
+/* -------------------------------------------------------------------------
+   PLAYER-DOCK：沉浸模式下，播放菜单默认收在屏幕底部之外，光标滑到界面最下方
+   时停留后展开，以平滑无回弹的缓动滑出。
+   -------------------------------------------------------------------------
+   播放菜单已移出 .universe-hud —— 该层在沉浸模式下整体 opacity:0，父级透明度
+   无法被子级覆盖，故改为挂在 .player-dock 下独立控制显隐。
+   transform 保持 translateX(-50%) 以维持原有的水平居中定位。
+   ------------------------------------------------------------------------- */
+.hud-hidden .player-shell {
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(calc(100% + 34px)) scaleY(.97);
+  transform-origin: 50% 100%;
+  transition: transform .46s cubic-bezier(.22, .8, .25, 1), opacity .25s ease, visibility 0s linear .46s;
+}
+.hud-hidden.player-revealed .player-shell {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(0) scaleY(1);
+  transition: transform .46s cubic-bezier(.22, .8, .25, 1), opacity .25s ease, visibility 0s;
+}
+
+.immersive-player-handle { position: absolute; z-index: 13; left: 50%; bottom: max(3px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: 88px; height: 26px; display: grid; place-items: center; border: 0; padding: 0; background: transparent; color: #ddbb87; cursor: pointer; touch-action: none; -webkit-tap-highlight-color: transparent; }
+.immersive-player-handle span { width: 38px; height: 3px; border-radius: 10px; background: currentColor; opacity: .48; box-shadow: 0 0 14px #dfb57940; transition: width .25s, opacity .25s; }
+.immersive-player-handle:hover span, .immersive-player-handle:focus-visible span { width: 50px; opacity: .95; }
+.immersive-player-handle.is-open { bottom: max(0px, env(safe-area-inset-bottom)); }
+.immersive-player-handle.is-open span { opacity: .28; }
+.immersive-player-close { position: absolute; z-index: 3; right: 0; top: 0; display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid #ddbb8720; border-radius: 50%; background: #101927a8; color: #ddbb87; cursor: pointer; }
+.immersive-player-close:hover { border-color: #ddbb8780; background: #182538; }
+
+/* -------------------------------------------------------------------------
+   CONTROL-CONSOLE：底部互动栏 → 可拖动 / 可缩放的悬浮小窗
+   -------------------------------------------------------------------------
+   1) 玻璃层上移到 .cockpit，让整个窗口共享一块完整玻璃底；内部 .control-bar
+      关掉自己的玻璃层（第三段 :is 列表本就包含它），否则会叠出双层玻璃。
+   2) .console-title 为拖动把手，.console-resize 为右下角缩放手柄 —— .universe-hud
+      整体已是 pointer-events:none，两者必须显式恢复 auto 才能拖得动。
+   3) .cockpit 自身也恢复 auto：窗口区域内的空白不再穿透到 3D 场景。
+   ------------------------------------------------------------------------- */
+.app-shell .cockpit {
+  --glass-blur: 22px;
+  --glass-fade: 12px;
+  --glass-tint-a: rgba(20, 32, 50, .52);
+  --glass-tint-b: rgba(9, 17, 28, .62);
+  --glass-ring: rgba(196, 209, 219, .12);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 9px 11px 11px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: 0 24px 78px rgba(0, 0, 0, .18);
+  isolation: isolate;
+  pointer-events: auto;
+}
+.app-shell .cockpit::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: linear-gradient(150deg, var(--glass-tint-a), var(--glass-tint-b));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate, 1.4));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate, 1.4));
+  box-shadow: inset 0 0 0 1px var(--glass-ring), inset 0 1px 0 rgba(255, 255, 255, .06);
+  pointer-events: none;
+}
+@supports (mask-composite: intersect) or (-webkit-mask-composite: source-in) {
+  .app-shell .cockpit::before {
+    mask-image:
+      linear-gradient(to right, transparent 0, #000 var(--glass-fade), #000 calc(100% - var(--glass-fade)), transparent 100%),
+      linear-gradient(to bottom, transparent 0, #000 var(--glass-fade), #000 calc(100% - var(--glass-fade)), transparent 100%);
+    mask-composite: intersect;
+    -webkit-mask-image:
+      linear-gradient(to right, transparent 0, #000 var(--glass-fade), #000 calc(100% - var(--glass-fade)), transparent 100%),
+      linear-gradient(to bottom, transparent 0, #000 var(--glass-fade), #000 calc(100% - var(--glass-fade)), transparent 100%);
+    -webkit-mask-composite: source-in;
+  }
+}
+/* 玻璃已由窗口承担，控制栏自身不再出玻璃；窗口变窄时让工具组换行，而不是溢出 */
+.app-shell .cockpit .control-bar {
+  position: static;
+  flex-wrap: wrap;
+  row-gap: 12px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.app-shell .cockpit .control-bar::before { content: none }
+
+/* 标题栏 = 拖动把手。display 需覆盖 styles.css 里「矮屏隐藏 scene-instructions」
+   的媒体查询，否则该尺寸下窗口将失去唯一的拖拽入口。 */
+.app-shell .cockpit .console-title {
+  display: flex;
+  position: relative;
+  margin-bottom: 8px;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid rgba(196, 209, 219, .1);
+  font-size: 9px;
+  letter-spacing: .6px;
+  color: #6b8399;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  pointer-events: auto;
+}
+.app-shell .cockpit .console-title:active { cursor: grabbing }
+.app-shell .cockpit .console-grip { display: flex; color: #4d6478 }
+
+/* 内容区：窗口变矮时内部纵向滚动；横向不再产生滚动条（越界交给控制栏换行解决），
+   否则按钮获得焦点时的 scrollIntoView 会把内容横向推走。 */
+.app-shell .cockpit .console-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(164, 186, 195, .22) transparent;
+}
+.app-shell .cockpit .console-body > * { flex: 0 0 auto }
+
+/* 右下角缩放手柄 */
+.app-shell .cockpit .console-resize {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  display: flex;
+  width: 18px;
+  height: 18px;
+  padding: 3px;
+  color: #6d879c;
+  opacity: .7;
+  cursor: nwse-resize;
+  touch-action: none;
+  pointer-events: auto;
+  transition: opacity .18s ease;
+}
+.app-shell .cockpit .console-resize:hover { opacity: 1 }
+.app-shell .cockpit .console-resize svg { width: 100%; height: 100% }
+
+/* -------------------------------------------------------------------------
+   APPLE-GLASS：行星信息浮窗（.planet-detail）的高级毛玻璃
+   -------------------------------------------------------------------------
+   1) 材质：半透明底 + 30px 背景模糊 + 1.6 倍饱和度，接近 Apple 官网那种
+      「毛玻璃卡片」的通透感。玻璃层仍是上文第 3 段的 ::before，这里只覆盖变量
+      与内阴影，所以四边渐隐 mask 和「不支持 backdrop-filter」的回退自动继承。
+   2) 层次：外阴影两层（远距柔和扩散定浮起高度 + 近距贴边收束轮廓）；内阴影三层
+      （1px 亮环 + 顶部内高光 + 底部内暗边），玻璃才有厚度，而不是一条均匀描边。
+   3) 可复用：材质全部走 --glass-* 变量（含新增的 --glass-saturate），其它面板只要
+      覆盖同名变量即可复用同一套配方，不必复制材质代码。
+   4) 降级：
+      - .app-shell[data-quality="low"]（工具栏「画面品质 = 流畅」）：模糊降到 12px；
+      - 窄屏 ≤620px：模糊降到 18px，减少移动 GPU 的采样开销；
+      - prefers-reduced-transparency：直接关掉模糊，改用高不透明度底色；
+      - prefers-contrast: more：提高底色不透明度、描边与文字对比。
+      本应用恒为暗色场景（.app-shell 底色 #050b14），换浅色皮肤会与 3D 场景割裂，
+      因此「亮色 / 弱透明环境」由上面两条系统偏好降级覆盖，而不是换肤。
+   ------------------------------------------------------------------------- */
+.app-shell .planet-detail {
+  --glass-blur: 30px;
+  --glass-saturate: 1.6;
+  --glass-fade: 10px;
+  --glass-tint-a: rgba(30, 43, 62, .46);
+  --glass-tint-b: rgba(10, 16, 26, .58);
+  --glass-ring: rgba(255, 255, 255, .14);
+  border-radius: 18px;
+  box-shadow: 0 30px 70px -28px rgba(0, 0, 0, .62), 0 10px 26px -16px rgba(0, 0, 0, .45);
+}
+
+/* 受光边缘：顶部亮一线、底部压一暗边，形成玻璃厚度 */
+.app-shell .planet-detail::before {
+  box-shadow:
+    inset 0 0 0 1px var(--glass-ring),
+    inset 0 1px 0 rgba(255, 255, 255, .22),
+    inset 0 -1px 0 rgba(0, 0, 0, .22);
+}
+
+/* 文字可读性：浮窗压在变化剧烈的星云 / 星球上，标题与数值补一层极淡的暗投影 */
+.app-shell .planet-detail strong,
+.app-shell .planet-detail .detail-number,
+.app-shell .planet-detail .detail-metrics dd { text-shadow: 0 1px 10px rgba(3, 8, 16, .55) }
+.app-shell .planet-detail .detail-metrics dt { color: #9db0c4 }
+.app-shell .planet-detail .detail-eyebrow { color: #cdb28a }
+.app-shell .planet-detail p { color: #9aacbc }
+
+/* 性能降级：品质「流畅」与窄屏各自收窄模糊半径 */
+.app-shell[data-quality="low"] .planet-detail { --glass-blur: 12px; --glass-saturate: 1.2 }
+@media (max-width: 620px) { .app-shell .planet-detail { --glass-blur: 18px } }
+
+/* 系统偏好降级：弱透明 → 取消模糊改用高不透明度底；高对比 → 提高不透明度与描边 */
+@media (prefers-reduced-transparency: reduce) {
+  .app-shell .planet-detail { --glass-tint-a: rgba(26, 38, 56, .93); --glass-tint-b: rgba(9, 15, 25, .96) }
+  .app-shell .planet-detail::before { -webkit-backdrop-filter: none; backdrop-filter: none }
+}
+@media (prefers-contrast: more) {
+  .app-shell .planet-detail { --glass-tint-a: rgba(16, 25, 40, .84); --glass-tint-b: rgba(6, 11, 19, .9); --glass-ring: rgba(255, 255, 255, .3) }
+  .app-shell .planet-detail .detail-metrics dt { color: #c6d5e3 }
+}

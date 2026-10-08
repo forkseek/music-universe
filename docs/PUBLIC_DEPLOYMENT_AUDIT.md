@@ -1,3 +1,5 @@
+> 历史说明：以下 SQLite/腾讯云内容对应 master 版本。codex/render-neon 发布分支改用 PostgreSQL；当前部署请遵循 [Render + Neon 指南](DEPLOY_RENDER_NEON.md)。
+
 # 公网部署检查与执行方案
 
 检查日期：2026-10-06。当前版本可以构建、大厅能够同源加载 3D 子页；上线前需修正发布包的依赖与密钥隔离，并明确音乐平台能力。推荐先部署单台 Linux 云服务器、本地持久卷、Docker 单实例和 Nginx HTTPS。下面配置为候选模板，不代表已在云端部署成功。

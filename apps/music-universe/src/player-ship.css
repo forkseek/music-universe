@@ -1,0 +1,28 @@
+/* =========================================================================
+   player-ship.css — 播放器飞船与拖尾
+   -------------------------------------------------------------------------
+   自成一个特性样式文件（与 hall-connection.css / music-search.css 同一做法）：
+   这组规则只服务 PlayerShip 这一处装饰，放在这里既贴着图形本身，
+   也不会被共享样式表里的大段改动带走。
+   选择器带 .player-orbit 前缀，是为了让轨道层里那条旧规则
+   （.player-ship svg{width:100%;height:auto}）无论放在前后都不会改写拖尾尺寸。
+   ========================================================================= */
+
+/* 拖尾有 190px 长，外发光只挂在船体图形上；轨道层的 span 本身不带 filter。 */
+.player-orbit .player-ship{filter:none}
+.player-orbit .player-ship-body{display:block;width:100%;height:auto;filter:drop-shadow(0 0 7px #f0a55e85)}
+
+/* 拖尾：长度按船宽百分比给出（340% ≈ 参考图里的 3.2 倍船长），
+   因此 56 / 40 / 32px 三个断点自动等比缩放，不必再写媒体查询。
+   right:85% → 右端落在排气口 x=6.6/44；top:65% → 排气口 y=15.6/24。
+   transform-origin 放在排气口那一侧：动画缩放时只有尾端延伸，接口不会脱开。 */
+.player-orbit .player-trail{position:absolute;right:85%;top:65%;width:340%;height:150%;transform:translateY(-50%);transform-origin:100% 50%;pointer-events:none;will-change:opacity,transform}
+.player-orbit .player-trail>svg{display:block;width:100%;height:100%}
+
+/* 只在场景动起来时呼吸，暂停即静止；缓动用 ease-in-out，不做回弹过冲。 */
+.player-orbit .player-ship[data-playing=true] .player-trail{animation:playerTrailPulse 2.6s ease-in-out infinite}
+.player-orbit .player-ship[data-playing=true] .player-trail-flare{animation:playerTrailFlare 1.2s ease-in-out infinite}
+@keyframes playerTrailPulse{0%,100%{opacity:.78;transform:translateY(-50%) scaleX(1)}50%{opacity:1;transform:translateY(-50%) scaleX(1.04)}}
+@keyframes playerTrailFlare{0%,100%{opacity:.8}35%{opacity:1}70%{opacity:.62}}
+
+@media (prefers-reduced-motion:reduce){.player-orbit .player-trail,.player-orbit .player-trail-flare{animation:none}}

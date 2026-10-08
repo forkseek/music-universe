@@ -10,8 +10,9 @@ const config: NextConfig = {
   // QQ callbacks and media URLs contain short-lived credentials. Avoid dev URL logs.
   logging: { incomingRequests: { ignore: [/^\/api\/qq\/login\/callback(?:\?|$)/, /^\/api\/(?:music|qq)\/audio(?:\?|$)/] } },
   output: "standalone",
-  serverExternalPackages: ["better-sqlite3"],
-  outputFileTracingIncludes: { "/*": ["./src/db/migrations/**/*"] },
+  serverExternalPackages: ["pg"],
+  outputFileTracingIncludes: { "/*": ["./src/db/postgres-migrations/**/*"] },
+  outputFileTracingExcludes: { "/*": ["./.env*", "./data/**/*", "./work/**/*", "./apps/music-universe/**/*", "./node_modules/@electric-sql/**/*"] },
   turbopack: { root: process.cwd() },
   async headers() {
     return [{ source: "/:path*", headers: [

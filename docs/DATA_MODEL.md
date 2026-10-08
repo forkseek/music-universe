@@ -1,3 +1,5 @@
+> 历史说明：以下 SQLite/腾讯云内容对应 master 版本。codex/render-neon 发布分支改用 PostgreSQL；当前部署请遵循 [Render + Neon 指南](DEPLOY_RENDER_NEON.md)。
+
 # 数据库约定与持久化
 
 Day 1 固定 SQLite + Drizzle schema。Day 2 已接入 better-sqlite3、匿名会话、事务导入、删除和世界保存；`0000`、`0001` 两份迁移由应用初始化时自动执行，迁移记录防止重复执行。

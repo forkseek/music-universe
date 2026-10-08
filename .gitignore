@@ -26,3 +26,15 @@ data/
 
 # Local packaging/build scratch (contains large tarballs and build output)
 work/public-deployment/
+work/migrate-postgres.mjs
+work/restore-test-format.mjs
+work/update-readme.mjs
+work/probe-postgres.mjs
+work/review-release.mjs
+work/render-schema.json
+apps/**/dist/
+apps/**/reports/
+apps/music-universe/*.png
+apps/music-universe/*.patch
+apps/music-universe/*verification.json
+apps/music-universe/.github/

@@ -13,4 +13,8 @@ data
 test-results
 playwright-report
 coverage
+apps/**/node_modules
+apps/**/dist
+apps/**/reports
+work
 docs/artifacts

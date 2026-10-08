@@ -1,0 +1,134 @@
+/* =========================================================================
+   floating-panels.css —— 星球介绍浮窗 & 曲目索引：拖动 / 毛玻璃 / 果冻 / 海浪
+   -------------------------------------------------------------------------
+   1) 拖动：两个浮窗共用 useFloatingPanel 的拖拽逻辑，这里只补「把手」光标与
+      触摸手势开关。可滚动 / 可点的区域（track-strip、按钮）不参与拖动，
+      因此不会和点击、横向滚动、悬停冲突。
+   2) 毛玻璃：两块面板本来就在 glass-ui.css 的统一 :is 列表里，这里只做
+      「细描边加强 + 不支持 backdrop-filter 时降级为更实的半透明底」。
+   3) 果冻：曲目项悬停弹性放大，仅在有 hover 能力的精确指针设备上生效。
+   4) 海浪：曲目条随浏览速度起伏，参数走 CSS 变量（由 useBrowseWave 读取）。
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   1. 拖动把手
+   ------------------------------------------------------------------------- */
+/* 星球介绍浮窗：整块可拖，按钮仍是点击态。 */
+.app-shell .planet-detail {
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.app-shell .planet-detail.is-dragging,
+.app-shell .planet-detail.is-dragging :is(button, a) { cursor: grabbing; }
+.app-shell .planet-detail :is(button, a) { cursor: pointer; }
+
+/* 曲目索引：标题栏是拖动把手（触摸手势交给它），曲目条自身保留横向滚动。 */
+.app-shell .track-index {
+  cursor: grab;
+  touch-action: none;
+}
+.app-shell .track-index .index-heading {
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.app-shell .track-index.is-dragging,
+.app-shell .track-index.is-dragging .index-heading { cursor: grabbing; }
+.app-shell .track-index :is(button, a) { cursor: pointer; }
+.app-shell .track-index .track-strip { cursor: default; touch-action: pan-x; }
+.app-shell .track-index .track-card { cursor: pointer; }
+
+/* 拖动过程中关掉面板自身的入场动画，避免与跟手位移叠加。 */
+.app-shell :is(.planet-detail, .track-index).is-dragging { animation: none; }
+
+/* 顶部中央的「抓手」提示条：纯装饰，不接收指针事件。 */
+.app-shell .track-index::after {
+  content: "";
+  position: absolute;
+  top: 9px;
+  left: 50%;
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  transform: translateX(-50%);
+  background: rgba(198, 211, 221, .2);
+  pointer-events: none;
+}
+
+/* -------------------------------------------------------------------------
+   2. 毛玻璃：细描边加强 + 无 backdrop-filter 时降级
+   ------------------------------------------------------------------------- */
+.app-shell :is(.planet-detail, .track-index) {
+  --glass-ring: rgba(206, 219, 231, .16);
+}
+
+/* 不支持背景模糊（旧浏览器 / 关闭 GPU 合成）时，玻璃层退化为更实的半透明底，
+   保证文字对比度与可读性；描边与阴影保持不变以维持层次。 */
+@supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
+  .app-shell :is(.planet-detail, .track-index) {
+    --glass-tint-a: rgba(20, 32, 50, .93);
+    --glass-tint-b: rgba(9, 17, 28, .96);
+  }
+}
+
+/* -------------------------------------------------------------------------
+   3. 果冻悬停：曲目项弹性放大
+   -------------------------------------------------------------------------
+   仅桌面精确指针 + 支持 hover 的设备生效（移动端不做放大，避免误触与滚动干扰）。
+   --jelly-scale 放大倍数 / --jelly-duration 回弹时长 / --jelly-ease 弹性曲线。
+   曲目条本身是 overflow 滚动容器，为避免放大后被裁切，给 strip 留出内边距并用
+   等量负外边距抵消，保持原有排版位置不变。
+   ------------------------------------------------------------------------- */
+.app-shell .track-strip {
+  padding: 8px 5px 9px;
+  margin: -8px -5px -3px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-shell .track-card {
+    --jelly-scale: 1.06;
+    --jelly-duration: .42s;
+    --jelly-ease: cubic-bezier(.34, 1.56, .64, 1);
+    position: relative;
+    transform-origin: 50% 62%;
+    will-change: transform;
+    transition: transform var(--jelly-duration) var(--jelly-ease), background .18s, border-color .18s;
+  }
+  .app-shell .track-card:hover,
+  .app-shell .track-card:focus-visible {
+    z-index: 2;
+    transform: scale(var(--jelly-scale)) translateY(-3px);
+  }
+  .app-shell .track-card:active {
+    transform: scale(calc(1 + (var(--jelly-scale) - 1) * .45));
+    transition-duration: .12s;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   4. 海浪：曲目条随浏览速度起伏（useBrowseWave 读取这里的参数）
+   ------------------------------------------------------------------------- */
+.app-shell .track-strip {
+  --wave-amplitude: 12;   /* 最大起伏幅度 px */
+  --wave-frequency: 2.6;  /* 起伏频率 rad/s */
+  --wave-gain: .014;      /* 浏览速度 → 幅度 的增益 */
+  --wave-decay: 3.2;      /* 每秒指数衰减系数（越大平息越快） */
+  --wave-delay: 140;      /* 停止输入后的缓冲 ms */
+  --wave-min-speed: 700;  /* 触发阈值 px/s，低于此速度不起浪 */
+  /* 滚轮 / 触控板的横向滚动要即时跟手（它是「快速浏览」的主要输入来源），
+     因此这里关掉 smooth；左右箭头的平滑滚动由 scrollBy({behavior:'smooth'}) 显式指定。 */
+  scroll-behavior: auto;
+  transform-origin: 50% 100%;
+  will-change: transform;
+}
+
+/* -------------------------------------------------------------------------
+   5. 降低动效偏好：关闭果冻与海浪
+   ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .app-shell .track-card { transform: none !important }
+  .app-shell .track-strip { transform: none !important; will-change: auto }
+}
