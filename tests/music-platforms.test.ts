@@ -33,8 +33,8 @@ beforeEach(async () => {
 });
 afterEach(async () => {
     for (const provider of ["netease", "qq", "kugou", "qishui"] as const) {
-        cancelLogin(owner, provider);
-        cancelLogin(other, provider);
+        await cancelLogin(owner, provider);
+        await cancelLogin(other, provider);
     }
     globals.musicLoginJobs?.clear();
     globals.musicMediaTickets?.clear();
@@ -78,7 +78,8 @@ describe("music platform identity and login lifecycle", () => {
         let resolvePoll!: (v: unknown) => void;
         fixtures.call.mockImplementation(() => new Promise(resolve => { resolvePoll = resolve; }));
         const running = pollPlatformLogin(owner, "netease", current.loginId);
-        cancelLogin(owner, "netease", current.loginId);
+        await vi.waitFor(() => expect(resolvePoll).toBeTypeOf("function"));
+        await cancelLogin(owner, "netease", current.loginId);
         resolvePoll({ code: 803, cookie: "MUSIC_U=fixture-late-cookie" });
         expect(await running).toMatchObject({ status: "cancelled" });
         expect((await readAccount(owner, "netease"))).toBeNull();
@@ -108,9 +109,9 @@ describe("catalogue and audio boundaries", () => {
         for (const url of ["https://127.0.0.1/", "https://music.126.net.attacker.test/a", "https://attacker.test@music.126.net/a", "file:///a", "https://music.126.net:3002/a"])
             expect(trustedMediaUrl("netease", url)).toBeNull();
         expect(trustedMediaUrl("netease", "http://m801.music.126.net/a")?.protocol).toBe("https:");
-        const ticket = musicMediaTicket(owner, "netease", "https://m801.music.126.net/a").split("ticket=")[1];
+        const ticket = (await musicMediaTicket(owner, "netease", "https://m801.music.126.net/a")).split("ticket=")[1];
         await expect(musicAudio(other, ticket, null, signal())).rejects.toMatchObject({ code: "AUDIO_NOT_FOUND" });
-        revokeMedia(owner, "netease");
+        await revokeMedia(owner, "netease");
         await expect(musicAudio(owner, ticket, null, signal())).rejects.toMatchObject({ code: "AUDIO_NOT_FOUND" });
     });
     it("handles seek, suffix and invalid audio ranges", () => {
@@ -123,7 +124,7 @@ describe("catalogue and audio boundaries", () => {
     it("streams range audio without forwarding cookies or exposing upstream URLs", async () => {
         const fetcher = vi.fn(async () => new Response(new Uint8Array([1, 2, 3]), { status: 206, headers: { "Content-Type": "audio/mpeg", "Content-Range": "bytes 0-2/100", "Content-Length": "3" } }));
         vi.stubGlobal("fetch", fetcher);
-        const ticket = musicMediaTicket(owner, "netease", "https://m801.music.126.net/a").split("ticket=")[1];
+        const ticket = (await musicMediaTicket(owner, "netease", "https://m801.music.126.net/a")).split("ticket=")[1];
         const response = await musicAudio(owner, ticket, "bytes=0-2", signal());
         expect(response.status).toBe(206);
         expect(response.headers.get("content-range")).toBe("bytes 0-2/100");

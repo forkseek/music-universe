@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { locateAlbumTrack, matchesRecording, orderedAlbumTracks } from '@/lib/music/platforms/album-matching';
 import { readAlbumCover, resolvePlayingAlbum } from '@/lib/music/platforms/albums';
 import { resolvePlatformSong } from '@/lib/music/platforms/catalog';
-const fixtures = vi.hoisted(() => ({call:vi.fn(), qq:vi.fn()}));
+import type { DatabaseContext } from '@/db/connection';
+import { openDatabase } from './helpers/database';
+import { users } from '@/db/schema';
+const fixtures = vi.hoisted(() => ({call:vi.fn(), qq:vi.fn(), db: null as DatabaseContext | null}));
+vi.mock('@/db/connection', async original => ({ ...await original<typeof import('@/db/connection')>(), getDatabase: () => fixtures.db! }));
 vi.mock('@/lib/music/platforms/runtime',()=>({platformCall:fixtures.call}));
 vi.mock('@/lib/music/platforms/accounts',()=>({readAccount:()=>null}));
 vi.mock('@/lib/music/providers/radiohand-qq',()=>({radiohandAlbum:fixtures.qq,radiohandSearchPage:vi.fn(),radiohandSongUrl:vi.fn()}));
@@ -13,8 +17,13 @@ const nativeAlbum=()=>({id:'10',name:'Release',artist:'Artist',cover:'https://p1
   tracks:[{id:'3',name:'Third',artist:'Artist',duration:180000,discNumber:2,trackNumber:1},
     {id:'2',name:'Second',artist:'Artist',duration:190000,discNumber:1,trackNumber:2},
     {id:'1',name:'First',artist:'Artist',duration:170000,discNumber:1,trackNumber:1}]});
-beforeEach(()=>{fixtures.call.mockReset();fixtures.qq.mockReset();globals.musicAlbumMetadata?.clear();globals.musicCatalog?.clear();});
-afterEach(()=>{globals.musicAlbumMetadata?.clear();globals.musicCatalog?.clear();vi.unstubAllGlobals();});
+beforeEach(async()=>{
+  fixtures.call.mockReset();fixtures.qq.mockReset();globals.musicAlbumMetadata?.clear();globals.musicCatalog?.clear();
+  vi.stubEnv('MUSIC_CREDENTIAL_SECRET', 'album-fixture-encryption-test-secret');
+  fixtures.db = await openDatabase();
+  await fixtures.db.db.insert(users).values(['owner','another','one','two'].map(id=>({id,sessionTokenHash:id})));
+});
+afterEach(async()=>{globals.musicAlbumMetadata?.clear();globals.musicCatalog?.clear();await fixtures.db?.close();fixtures.db=null;vi.unstubAllEnvs();vi.unstubAllGlobals();});
 describe('recording identity and ordered album metadata',()=>{
   it('uses discs and track numbers, preserving API order for missing numbers',()=>{
     expect(orderedAlbumTracks(nativeAlbum().tracks).map(t=>t.name)).toEqual(['First','Second','Third']);

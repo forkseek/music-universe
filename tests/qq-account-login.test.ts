@@ -64,32 +64,32 @@ afterEach(async () => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
 });
-function start(user = owner) {
-    const login = startQqOAuth(user, request()), url = new URL(login.authorizeUrl);
+async function start(user = owner) {
+    const login = await startQqOAuth(user, request()), url = new URL(login.authorizeUrl);
     return { login, state: url.searchParams.get("state")!, url };
 }
-async function connected() { const job = start(); const result = await completeQqOAuth(owner, job.state, "fixture-authorization-code"); return { ...job, result }; }
+async function connected() { const job = await start(); const result = await completeQqOAuth(owner, job.state, "fixture-authorization-code"); return { ...job, result }; }
 describe("QQ official OAuth adapter (upstream fixtures, not real authorization)", () => {
     it("requires our registered application's config and uses an owner-bound, random state", async () => {
         vi.stubEnv("QQ_CONNECT_APP_SECRET", "");
         expect(qqOAuthAvailability().loginAvailable).toBe(false);
-        expect(() => start()).toThrowError();
+        await expect(start()).rejects.toThrowError();
         expect(calls).not.toHaveBeenCalled();
         vi.stubEnv("QQ_CONNECT_APP_SECRET", "fixture-secret-for-this-application");
-        const { url, login, state } = start();
+        const { url, login, state } = await start();
         expect(url.origin).toBe("https://graph.qq.com");
         expect(url.searchParams.get("client_id")).toBe("12345678");
         expect(url.searchParams.get("scope")).toBe("get_user_info");
         expect(state).toHaveLength(43);
         expect(login.image).toBe("");
         expect(JSON.stringify(login)).not.toContain("fixture-secret");
-        expect(() => pollQqOAuth(other, login.loginId)).toThrow();
+        await expect(pollQqOAuth(other, login.loginId)).rejects.toThrow();
         await expect(completeQqOAuth(owner, "wrong-state", "fixture-code")).rejects.toMatchObject({ code: "QQ_OAUTH_STATE_INVALID" });
         expect(calls).not.toHaveBeenCalled();
     });
-    it("checks the configured callback's path and origin before issuing a login", () => {
+    it("checks the configured callback's path and origin before issuing a login", async () => {
         vi.stubEnv("QQ_CONNECT_REDIRECT_URI", "https://site.example/api/qq/login/callback");
-        expect(() => start()).toThrowError();
+        await expect(start()).rejects.toThrowError();
         vi.stubEnv("QQ_CONNECT_REDIRECT_URI", "javascript:alert(1)");
         expect(qqOAuthAvailability().loginAvailable).toBe(false);
     });
@@ -103,7 +103,7 @@ describe("QQ official OAuth adapter (upstream fixtures, not real authorization)"
         expect((await readAccount(owner, "qq"))?.oauth?.accessToken).toBe("fixture-access-token");
         expect((await readAccount(other, "qq"))).toBeNull();
         expect(await qqOAuthStatus(owner, signal())).toMatchObject({ authorized: true, musicAuthorized: false, profileAvailable: true, user: result.user });
-        expect(pollQqOAuth(owner, login.loginId)).toMatchObject({ status: "success" });
+        expect(await pollQqOAuth(owner, login.loginId)).toMatchObject({ status: "success" });
         expect(calls).toHaveBeenCalledTimes(3);
         expect(qqAccountCredentials(owner)).toBeNull();
         expect(await qqAccountResolve(owner, "songmid", "", signal())).toBeNull();
@@ -129,7 +129,7 @@ describe("QQ official OAuth adapter (upstream fixtures, not real authorization)"
         expect((await readAccount(owner, "qq"))).toBeNull();
     });
     it("shares duplicate callbacks and keeps profile checks cached for sixty seconds", async () => {
-        const job = start();
+        const job = await start();
         const [a, b] = await Promise.all([completeQqOAuth(owner, job.state, "fixture-code"), completeQqOAuth(owner, job.state, "fixture-code")]);
         expect(a).toEqual(b);
         expect(calls).toHaveBeenCalledTimes(3);
@@ -142,14 +142,14 @@ describe("QQ official OAuth adapter (upstream fixtures, not real authorization)"
     });
     it("expires pending login independent of a timer, rejects replaced state, and respects cancellation", async () => {
         vi.useFakeTimers();
-        const old = start(), next = start();
-        expect(() => pollQqOAuth(owner, old.login.loginId)).toThrow();
+        const old = await start(), next = await start();
+        await expect(pollQqOAuth(owner, old.login.loginId)).rejects.toThrow();
         await expect(completeQqOAuth(owner, old.state, "fixture-code")).rejects.toMatchObject({ code: "QQ_OAUTH_STATE_INVALID" });
-        cancelQqOAuth(owner, next.login.loginId);
+        await cancelQqOAuth(owner, next.login.loginId);
         expect(await completeQqOAuth(owner, next.state, "fixture-code")).toMatchObject({ status: "cancelled" });
-        const expired = start();
+        const expired = await start();
         vi.setSystemTime(Date.now() + 240001);
-        expect(pollQqOAuth(owner, expired.login.loginId)).toMatchObject({ status: "expired" });
+        expect(await pollQqOAuth(owner, expired.login.loginId)).toMatchObject({ status: "expired" });
         expect(await completeQqOAuth(owner, expired.state, "fixture-code")).toMatchObject({ status: "expired" });
         expect(calls).not.toHaveBeenCalled();
     });
@@ -157,9 +157,9 @@ describe("QQ official OAuth adapter (upstream fixtures, not real authorization)"
         const normal = calls.getMockImplementation()!;
         let release!: (value: Response) => void;
         calls.mockImplementation((input, init) => new URL(String(input)).pathname === "/user/get_user_info" ? new Promise(resolve => { release = resolve; }) : normal(input, init));
-        const job = start(), finishing = completeQqOAuth(owner, job.state, "fixture-code");
+        const job = await start(), finishing = completeQqOAuth(owner, job.state, "fixture-code");
         await vi.waitFor(() => expect(release).toBeTypeOf("function"));
-        cancelQqOAuth(owner, job.login.loginId);
+        await cancelQqOAuth(owner, job.login.loginId);
         release(Response.json({ ret: 0, nickname: "late profile" }));
         expect(await finishing).toMatchObject({ status: "cancelled" });
         expect((await readAccount(owner, "qq"))).toBeNull();

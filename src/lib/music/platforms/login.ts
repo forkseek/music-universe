@@ -9,6 +9,7 @@ import { logoutQqAccount, qqAccountStatus } from "../providers/qq-account";
 import { cancelQqOAuth, pollQqOAuth, startQqOAuth } from "../providers/qq-oauth";
 import { desktopAvailable, electronPath, integrationRoot, platformCall } from "./runtime";
 import { deleteAccount, readAccount, saveAccount } from "./accounts";
+import { mutateState, putStates, readState } from "./shared-state";
 import { platformLabels, record, text, type Platform, type MusicProfile, type PlatformStatus, type Values } from "./types";
 type State = "pending" | "scanned" | "authorizing" | "success" | "expired" | "cancelled" | "error";
 interface LoginJob {
@@ -34,6 +35,76 @@ const active = (job: LoginJob) => jobs().get(keyOf(job.userId, job.provider)) ==
 export function publicLogin(job: LoginJob) { return { loginId: job.id, provider: job.provider, status: job.status, message: job.message, expiresAt: job.expiresAt, image: job.image, user: job.user }; }
 const terminal = (job: LoginJob, status: State, message: string) => { job.status = status; job.message = message; if (job.timer)
     clearTimeout(job.timer); job.child?.kill(); };
+type QrJob = Pick<LoginJob, "id" | "userId" | "provider" | "expiresAt" | "status" | "message" | "image" | "key" | "user"> & { lease?: string; leaseUntil?: number };
+const qrStored = (job: QrJob) => ({ value: job, expiresAt: job.expiresAt + 600000 });
+const qrActive = (job: QrJob) => job.expiresAt > Date.now() && ["pending", "scanned", "authorizing"].includes(job.status);
+const qrMissing = () => new RequestError(404, "登录已失效，请重新连接。", "LOGIN_NOT_FOUND");
+async function readQr(userId: string, id: string) {
+    const job = (await readState<QrJob>(userId, "qr", "netease", true))?.value;
+    if (!job || job.id !== id) throw qrMissing();
+    return job;
+}
+async function startQr(userId: string, request: Request) {
+    const job: QrJob = { id: randomUUID(), userId, provider: "netease", expiresAt: Date.now() + 240000, status: "pending", message: "正在获取二维码…" };
+    await putStates(userId, "qr", [{ key: "netease", ...qrStored(job) }]);
+    try {
+        const qr = await platformCall("netease", "qr", {}, "", request.signal);
+        if (!text(qr.key, 512) || !text(qr.image, 30000).startsWith("data:image/png;base64,")) throw new Error("invalid-qr");
+        await mutateState<QrJob, void>(userId, "qr", "netease", current => {
+            if (!current || current.value.id !== job.id || !qrActive(current.value)) return { result: undefined };
+            return { entry: qrStored({ ...current.value, key: text(qr.key, 512), image: text(qr.image, 30000), message: "请用网易云音乐 App 扫码并确认。" }), result: undefined };
+        });
+    } catch (error) {
+        await mutateState<QrJob, void>(userId, "qr", "netease", current => {
+            if (!current || current.value.id !== job.id || !qrActive(current.value)) return { result: undefined };
+            return { entry: qrStored({ ...current.value, status: "error", message: error instanceof RequestError ? error.message : "无法获取二维码，请重试。" }), result: undefined };
+        });
+    }
+    return publicLogin(await readQr(userId, job.id));
+}
+async function pollQr(userId: string, id: string) {
+    const lease = randomUUID();
+    const claimed = await mutateState<QrJob, { job: QrJob; claimed: boolean }>(userId, "qr", "netease", current => {
+        if (!current || current.value.id !== id) throw qrMissing();
+        const job = { ...current.value };
+        if (job.expiresAt <= Date.now() && ["pending", "scanned", "authorizing"].includes(job.status)) {
+            job.status = "expired"; job.message = "二维码已过期，请重新连接。";
+            return { entry: qrStored(job), result: { job, claimed: false } };
+        }
+        if (!qrActive(job) || !job.key || (job.leaseUntil || 0) > Date.now()) return { result: { job, claimed: false } };
+        job.lease = lease; job.leaseUntil = Date.now() + 45000;
+        return { entry: qrStored(job), result: { job, claimed: true } };
+    });
+    if (!claimed.claimed) return publicLogin(claimed.job);
+    let update: Partial<QrJob> = {};
+    let account: { cookie: string; profile: MusicProfile } | undefined;
+    try {
+        const signal = AbortSignal.timeout(40000);
+        const result = await platformCall("netease", "poll", { key: claimed.job.key }, "", signal);
+        if (result.code === 803) {
+            const latest = await readQr(userId, id);
+            if (!qrActive(latest) || latest.lease !== lease) return publicLogin(latest);
+            const cookie = typeof result.cookie === "string" ? result.cookie : "";
+            if (!cookie || cookie.length > 32768 || /[\r\n]/.test(cookie)) throw new Error("invalid-credentials");
+            const value = await platformCall("netease", "status", {}, cookie, signal);
+            const profile = parsePlatformProfile(value);
+            if (value.loggedIn !== true || value.reauthRequired === true || !profile.id || !profile.nickname)
+                throw new RequestError(502, "平台暂未返回有效账号信息，请重新连接。", "PROFILE_UNAVAILABLE");
+            account = { cookie, profile };
+            update = { status: "success", user: profile, message: "已连接 " + profile.nickname };
+        } else if (result.code === 800) update = { status: "expired", message: "二维码已过期，请重新连接。" };
+        else if (result.code === 802) update = { status: "scanned", message: "已扫码，请在手机上确认。" };
+    } catch (error) {
+        update = { message: error instanceof RequestError ? error.message : "平台暂时没有响应，请稍后重试。" };
+    }
+    return mutateState<QrJob, ReturnType<typeof publicLogin>>(userId, "qr", "netease", async (current, db) => {
+        if (!current || current.value.id !== id) throw qrMissing();
+        if (!qrActive(current.value) || current.value.lease !== lease) return { result: publicLogin(current.value) };
+        if (account) await saveAccount(userId, "netease", account, db);
+        const job = { ...current.value, ...update, lease: undefined, leaseUntil: undefined };
+        return { entry: qrStored(job), result: publicLogin(job) };
+    });
+}
 export function parsePlatformProfile(value: Values): MusicProfile {
     const rawAvatar = text(value.avatar || value.avatarUrl, 2048);
     let avatar = "";
@@ -99,9 +170,16 @@ async function complete(job: LoginJob, cookie: string) {
             terminal(job, "error", error instanceof RequestError ? error.message : "平台授权未完成，请重新连接账号。");
     }
 }
-export function cancelLogin(userId: string, provider: Platform, loginId?: string) {
+export async function cancelLogin(userId: string, provider: Platform, loginId?: string) {
     if (provider === "qq")
         return cancelQqOAuth(userId, loginId);
+    if (provider === "netease") {
+        await mutateState<QrJob, void>(userId, "qr", "netease", current => {
+            if (!current || (loginId && current.value.id !== loginId)) return { result: undefined };
+            return { entry: qrStored({ ...current.value, status: "cancelled", message: "登录已取消。" }), result: undefined };
+        });
+        return { ok: true };
+    }
     const job = jobs().get(keyOf(userId, provider));
     if (job && (!loginId || job.id === loginId)) {
         terminal(job, "cancelled", "登录已取消。");
@@ -110,16 +188,16 @@ export function cancelLogin(userId: string, provider: Platform, loginId?: string
     return { ok: true };
 }
 export async function logoutPlatform(userId: string, provider: Platform) {
-    cancelLogin(userId, provider);
+    if (provider === "qq") return logoutQqAccount(userId);
+    await cancelLogin(userId, provider);
     (await deleteAccount(userId, provider));
-    if (provider === "qq")
-        logoutQqAccount(userId);
     return { ok: true };
 }
 export async function startPlatformLogin(userId: string, provider: Platform, request: Request) {
     if (provider === "qq")
         return startQqOAuth(userId, request);
-    if (provider !== "netease") {
+    if (provider === "netease") return startQr(userId, request);
+    {
         const host = (request.headers.get("host") || new URL(request.url).host).split(":")[0];
         if (!["127.0.0.1", "localhost"].includes(host) || !desktopAvailable())
             throw new RequestError(409, "此平台需要本机官方登录窗口，请在本机运行应用。", "DESKTOP_LOGIN_UNAVAILABLE");
@@ -129,8 +207,8 @@ export async function startPlatformLogin(userId: string, provider: Platform, req
             terminal(job, "expired", "二维码已过期，请重新连接。");
             jobs().delete(key);
         }
-    cancelLogin(userId, provider);
-    if (jobs().size >= 16 || (provider !== "netease" && [...jobs().values()].filter(job => job.child && active(job)).length >= 2))
+    await cancelLogin(userId, provider);
+    if (jobs().size >= 16 || [...jobs().values()].filter(job => job.child && active(job)).length >= 2)
         throw new RequestError(429, "请先完成或关闭其他登录窗口。", "LOGIN_BUSY");
     const job: LoginJob = { id: randomUUID(), userId, provider, expiresAt: Date.now() + 240000, status: "pending", message: "正在打开官方登录…" };
     jobs().set(keyOf(userId, provider), job);
@@ -138,15 +216,7 @@ export async function startPlatformLogin(userId: string, provider: Platform, req
         terminal(job, "expired", "登录已过期，请重新连接。"); }, 240000);
     job.timer.unref();
     try {
-        if (provider === "netease") {
-            const qr = await platformCall(provider, "qr", {}, "", request.signal);
-            if (active(job)) {
-                job.key = text(qr.key, 512);
-                job.image = text(qr.image, 30000);
-                job.message = "请用网易云音乐 App 扫码并确认。";
-            }
-        }
-        else {
+        {
             // A separate temporary Chromium profile for every login, removed on exit.
             const profileDir = mkdtempSync(path.join(tmpdir(), "music-world-login-"));
             const env = { ...process.env };
@@ -194,27 +264,11 @@ export async function startPlatformLogin(userId: string, provider: Platform, req
 export async function pollPlatformLogin(userId: string, provider: Platform, id: string) {
     if (provider === "qq")
         return pollQqOAuth(userId, id);
+    if (provider === "netease") return pollQr(userId, id);
     const job = jobs().get(keyOf(userId, provider));
     if (!job || job.id !== id)
         throw new RequestError(404, "登录已失效，请重新连接。", "LOGIN_NOT_FOUND");
     if (job.expiresAt <= Date.now() && ["pending", "scanned", "authorizing"].includes(job.status))
         terminal(job, "expired", "登录已过期，请重新连接。");
-    if (provider === "netease" && job.key && active(job)) {
-        if (!job.polling)
-            job.polling = (async () => {
-                const result = await platformCall(provider, "poll", { key: job.key });
-                if (!active(job))
-                    return;
-                if (result.code === 803)
-                    await complete(job, typeof result.cookie === "string" ? result.cookie : "");
-                else if (result.code === 800)
-                    terminal(job, "expired", "二维码已过期，请重新连接。");
-                else if (result.code === 802) {
-                    job.status = "scanned";
-                    job.message = "已扫码，请在手机上确认。";
-                }
-            })().finally(() => { job.polling = undefined; });
-        await job.polling;
-    }
     return publicLogin(job);
 }

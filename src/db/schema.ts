@@ -24,6 +24,13 @@ export const platformAccounts = pgTable("platform_accounts", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (t) => [primaryKey({ columns: [t.userId, t.provider] })]);
 
+/** Expiring, encrypted operational state shared by independent serverless instances. */
+export const musicRuntimeState = pgTable("music_runtime_state", {
+  userId: owner(), namespace: text("namespace").notNull(), key: text("key").notNull(),
+  payload: text("payload").notNull(), expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
+}, (t) => [primaryKey({ columns: [t.userId, t.namespace, t.key] }), index("music_runtime_expiry_idx").on(t.expiresAt)]);
+
 export const musicSources = pgTable("music_sources", {
   id: id(), userId: owner(), provider: text("provider").$type<MusicProviderId>().notNull(),
   label: text("label").notNull(), createdAt: now(),

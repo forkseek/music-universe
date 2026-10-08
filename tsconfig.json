@@ -46,6 +46,7 @@
     ".next-deployverify2/dev/types/**/*.ts"
   ],
   "exclude": [
+    ".netlify",
     "node_modules",
     ".next-test",
     "work",

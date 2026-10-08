@@ -4,7 +4,7 @@ import { radiohandSearchPage, limitPlayerRequests } from "@/lib/music/providers/
 export const runtime = "nodejs";
 export function GET(request: NextRequest) {
   return withUser(request, async (userId) => {
-    requireSameOrigin(request); limitPlayerRequests(userId);
+    requireSameOrigin(request); await limitPlayerRequests(userId);
     return radiohandSearchPage(request.nextUrl.searchParams.get("keywords") ?? "", Number(request.nextUrl.searchParams.get("limit") ?? 12), request.signal, userId, Number(request.nextUrl.searchParams.get("page") ?? 1));
   }, true);
 }

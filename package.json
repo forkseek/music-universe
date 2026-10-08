@@ -8,6 +8,7 @@
     "node": ">=24.0.0 <25"
   },
   "scripts": {
+    "prebuild": "node scripts/trace-music-worker.mjs",
     "dev": "next dev --hostname 127.0.0.1",
     "build": "npm run build:universe && next build",
     "build:universe": "node scripts/sync-universe.mjs",
@@ -18,6 +19,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:restart": "node --env-file-if-exists=.env.local scripts/test-restart.mjs",
+    "test:cloud-runtime": "node scripts/test-cloud-runtime.mjs",
     "smoke:local": "node scripts/smoke-local-demo.mjs",
     "db:init": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/db-init.ts",
     "storage:check": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/storage-check.ts",

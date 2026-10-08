@@ -1,26 +1,27 @@
 import "server-only";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { RequestError } from "@/lib/server/errors";
-import { deleteAccount, readAccount, saveAccount } from "../platforms/accounts";
+import { accountTransaction, deleteAccount, readAccount, saveAccount } from "../platforms/accounts";
+import { mutateState, putStates, readState } from "../platforms/shared-state";
+import type { DatabaseContext } from "@/db/connection";
 import { normalizeQqProfile, type QqUserProfile } from "./qq-profile";
 import type { PlatformAccount, QqOAuthGrant } from "../platforms/types";
 type Status = "pending" | "authorizing" | "success" | "expired" | "cancelled" | "error";
 interface Job {
     id: string;
     owner: string;
-    stateHash: Buffer;
+    stateHash: string;
     expiresAt: number;
     status: Status;
     message: string;
-    abort: AbortController;
+    authorizingUntil?: number;
     user?: QqUserProfile;
-    completion?: Promise<ReturnType<typeof publicJob>>;
 }
 interface VerifiedAccount extends PlatformAccount {
     oauth: QqOAuthGrant;
 }
 const runtime = globalThis as typeof globalThis & {
-    qqOAuthJobs?: Map<string, Job>;
+    qqOAuthAborts?: Map<string, AbortController>;
     qqOAuthProfiles?: Map<string, {
         token: string;
         until: number;
@@ -28,7 +29,6 @@ const runtime = globalThis as typeof globalThis & {
     }>;
     qqOAuthRefresh?: Map<string, Promise<VerifiedAccount>>;
 };
-const jobs = () => runtime.qqOAuthJobs ??= new Map();
 const digest = (value: string) => createHash("sha256").update(value).digest();
 const publicUser = (user: QqUserProfile): QqUserProfile => ({ ...user, avatar: user.avatar ? "/api/qq/avatar?v=" + createHash("sha256").update(user.avatar).digest("hex").slice(0, 12) : "" });
 const publicJob = (job: Job) => ({ provider: "qq" as const, loginId: job.id, expiresAt: job.expiresAt, status: job.status, message: job.message, user: job.user && publicUser(job.user), nickname: job.user?.nickname });
@@ -119,8 +119,8 @@ async function profile(access: QqOAuthGrant, id: string, signal: AbortSignal) {
         throw new RequestError(502, "QQ 官方接口尚未返回昵称，请重新连接。", "QQ_PROFILE_MISSING");
     return normalizeQqProfile(value, { id, nickname: "", avatar: "" });
 }
-async function verified(owner: string): Promise<VerifiedAccount | null> {
-    const account = (await readAccount(owner, "qq")), config = qqOAuthConfig();
+async function verified(owner: string, db?: DatabaseContext): Promise<VerifiedAccount | null> {
+    const account = (await readAccount(owner, "qq", db)), config = qqOAuthConfig();
     if (!config || !account?.oauth || account.oauth.kind !== "qq-connect" || account.oauth.appId !== config.appId || !Number.isFinite(account.oauth.expiresAt) || !account.oauth.accessToken || !account.profile?.id || !account.profile.nickname)
         return null;
     return account as VerifiedAccount;
@@ -134,110 +134,140 @@ function cacheProfile(owner: string, account: VerifiedAccount) {
         cache.delete(cache.keys().next().value!);
     cache.set(owner, { token: account.oauth.accessToken, until: Math.min(account.oauth.expiresAt, Date.now() + 60000), user: account.profile });
 }
-const active = (job: Job) => jobs().get(job.owner) === job && !job.abort.signal.aborted && job.expiresAt > Date.now() && ["pending", "authorizing"].includes(job.status);
-export function cancelQqOAuth(owner: string, id?: string) {
-    const job = jobs().get(owner);
-    if (job && (!id || id === job.id) && ["pending", "authorizing"].includes(job.status)) {
-        job.status = "cancelled";
-        job.message = "QQ 登录已取消。";
-        job.abort.abort();
-    }
+const active = (job: Job) => job.expiresAt > Date.now() && ["pending", "authorizing"].includes(job.status);
+const stored = (job: Job) => ({ value: job, expiresAt: job.expiresAt + 600000 });
+const replaced = () => new RequestError(409, "本次 QQ 登录已更新，请重新连接。", "QQ_LOGIN_REPLACED");
+
+export async function cancelQqOAuth(owner: string, id?: string) {
+    await mutateState<Job, void>(owner, "oauth", "login", current => {
+        if (!current || (id && current.value.id !== id) || !active(current.value)) return { result: undefined };
+        const job = { ...current.value, status: "cancelled" as const, message: "QQ 登录已取消。" };
+        runtime.qqOAuthAborts?.get(job.id)?.abort();
+        return { entry: stored(job), result: undefined };
+    });
     return { ok: true };
 }
 export async function logoutQqOAuth(owner: string) {
-    cancelQqOAuth(owner);
-    (await deleteAccount(owner, "qq"));
+    await cancelQqOAuth(owner);
+    await deleteAccount(owner, "qq");
     runtime.qqOAuthProfiles?.delete(owner);
     return { provider: "qq" as const, ok: true, message: "已断开 QQ 账号。" };
 }
-export function startQqOAuth(owner: string, request?: Request) {
+export async function startQqOAuth(owner: string, request?: Request) {
     const config = qqOAuthConfig();
-    if (!config)
-        throw new RequestError(503, qqOAuthAvailability().message, "QQ_OFFICIAL_CONFIG_REQUIRED");
+    if (!config) throw new RequestError(503, qqOAuthAvailability().message, "QQ_OFFICIAL_CONFIG_REQUIRED");
     if (request) {
         const url = new URL(request.url), origin = process.env.APP_ORIGIN || new URL(url.protocol + "//" + (request.headers.get("host") || url.host)).origin;
         if (new URL(config.redirect).origin !== origin)
             throw new RequestError(503, "QQ 回调地址与当前站点不一致，请检查官方登记域名和 APP_ORIGIN。", "QQ_CALLBACK_ORIGIN_MISMATCH");
     }
-    for (const [key, job] of jobs())
-        if (job.expiresAt + 600000 <= Date.now()) {
-            job.abort.abort();
-            jobs().delete(key);
-        }
-    if (jobs().size >= 256 && !jobs().has(owner))
-        throw new RequestError(429, "登录请求较多，请稍后重试。", "QQ_LOGIN_BUSY");
-    cancelQqOAuth(owner);
+    await cancelQqOAuth(owner);
     const state = randomBytes(32).toString("base64url");
-    const job: Job = { owner, id: randomUUID(), stateHash: digest(state), status: "pending", expiresAt: Date.now() + 240000, abort: new AbortController(), message: "请在 QQ 官方授权页面扫码并确认。" };
-    jobs().set(owner, job);
+    const job: Job = { owner, id: randomUUID(), stateHash: digest(state).toString("hex"), status: "pending", expiresAt: Date.now() + 240000, message: "请在 QQ 官方授权页面扫码并确认。" };
+    await putStates(owner, "oauth", [{ key: "login", ...stored(job) }]);
     const authorize = new URL("https://graph.qq.com/oauth2.0/authorize");
     Object.entries({ response_type: "code", client_id: config.appId, redirect_uri: config.redirect, scope: "get_user_info", state }).forEach(([key, value]) => authorize.searchParams.set(key, value));
     return { ...publicJob(job), authorizeUrl: authorize.href, image: "", expiresIn: 240000 };
 }
-export function pollQqOAuth(owner: string, id?: string) {
-    const job = jobs().get(owner);
-    if (!job || (id && id !== job.id))
-        throw new RequestError(409, "本次 QQ 登录已更新，请重新连接。", "QQ_LOGIN_REPLACED");
-    if (job.expiresAt <= Date.now() && ["pending", "authorizing"].includes(job.status)) {
-        job.status = "expired";
-        job.message = "QQ 登录已过期，请重新连接。";
-        job.abort.abort();
+export async function pollQqOAuth(owner: string, id?: string) {
+    let job = (await readState<Job>(owner, "oauth", "login", true))?.value;
+    if (!job || (id && id !== job.id)) throw replaced();
+    const expired = job.expiresAt <= Date.now();
+    const stalled = job.status === "authorizing" && (job.authorizingUntil || job.expiresAt) <= Date.now();
+    if ((expired || stalled) && ["pending", "authorizing"].includes(job.status)) {
+        const jobId = job.id;
+        job = await mutateState<Job, Job>(owner, "oauth", "login", current => {
+            if (!current || current.value.id !== jobId) throw replaced();
+            const next = { ...current.value };
+            if (["pending", "authorizing"].includes(next.status)) {
+                next.status = expired ? "expired" : "error";
+                next.message = expired ? "QQ 登录已过期，请重新连接。" : "QQ 授权响应超时，请重新连接。";
+                runtime.qqOAuthAborts?.get(next.id)?.abort();
+            }
+            return { entry: stored(next), result: next };
+        });
     }
     return publicJob(job);
 }
 export async function completeQqOAuth(owner: string, state: string, code: string, denied = false) {
-    const job = jobs().get(owner), config = qqOAuthConfig();
-    if (!job || !config || state.length > 256 || !timingSafeEqual(job.stateHash, digest(state)))
-        throw new RequestError(409, "QQ 登录状态校验失败，请重新连接。", "QQ_OAUTH_STATE_INVALID");
-    if (job.completion)
-        return job.completion;
-    if (!active(job))
-        return pollQqOAuth(owner, job.id);
-    if (denied) {
-        job.status = "cancelled";
-        job.message = "你已取消 QQ 官方授权。";
-        job.abort.abort();
-        return publicJob(job);
+    const config = qqOAuthConfig();
+    const claimed = await mutateState<Job, { job: Job; claimed: boolean }>(owner, "oauth", "login", current => {
+        const job = current?.value;
+        const hash = job && Buffer.from(job.stateHash, "hex");
+        if (!job || !config || state.length > 256 || hash?.length !== 32 || !timingSafeEqual(hash, digest(state)))
+            throw new RequestError(409, "QQ 登录状态校验失败，请重新连接。", "QQ_OAUTH_STATE_INVALID");
+        if (!active(job) || job.status === "authorizing") return { result: { job, claimed: false } };
+        if (denied) {
+            const next = { ...job, status: "cancelled" as const, message: "你已取消 QQ 官方授权。" };
+            return { entry: stored(next), result: { job: next, claimed: false } };
+        }
+        if (!/^[A-Za-z0-9_-]{8,512}$/.test(code)) throw new RequestError(400, "QQ 官方回调缺少授权码。", "QQ_OAUTH_CODE_MISSING");
+        const next = { ...job, status: "authorizing" as const, authorizingUntil: Date.now() + 45000, message: "正在通过官方接口获取 QQ 昵称和头像…" };
+        return { entry: stored(next), result: { job: next, claimed: true } };
+    });
+    if (!claimed.claimed) {
+        // Different instances must not redeem the same single-use authorization code.
+        const deadline = Date.now() + 45000;
+        let result = await pollQqOAuth(owner, claimed.job.id);
+        while (result.status === "authorizing" && Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            result = await pollQqOAuth(owner, claimed.job.id);
+        }
+        return result;
     }
-    if (!/^[A-Za-z0-9_-]{8,512}$/.test(code))
-        throw new RequestError(400, "QQ 官方回调缺少授权码。", "QQ_OAUTH_CODE_MISSING");
-    job.status = "authorizing";
-    job.message = "正在通过官方接口获取 QQ 昵称和头像…";
-    job.completion = (async () => {
-        try {
-            const access = grant(await official("token", { grant_type: "authorization_code", client_id: config.appId, client_secret: config.secret, redirect_uri: config.redirect, code }, job.abort.signal), config.appId);
-            const identity = await official("me", { access_token: access.accessToken }, job.abort.signal);
-            if (identity.client_id !== config.appId || typeof identity.openid !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(identity.openid))
-                throw new RequestError(401, "QQ 身份不属于当前应用，请重新授权。", "QQ_OAUTH_IDENTITY_INVALID");
-            const user = await profile(access, identity.openid, job.abort.signal);
-            if (!active(job))
-                return pollQqOAuth(owner, job.id);
-            const account: VerifiedAccount = { cookie: "", oauth: access, profile: user };
-            (await saveAccount(owner, "qq", account));
+    const job = claimed.job, abort = new AbortController();
+    const controllers = runtime.qqOAuthAborts ??= new Map();
+    controllers.set(job.id, abort);
+    const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(35000)]);
+    try {
+        const access = grant(await official("token", { grant_type: "authorization_code", client_id: config!.appId, client_secret: config!.secret, redirect_uri: config!.redirect, code }, signal), config!.appId);
+        const identity = await official("me", { access_token: access.accessToken }, signal);
+        if (identity.client_id !== config!.appId || typeof identity.openid !== "string" || !/^[A-Za-z0-9_-]{8,128}$/.test(identity.openid))
+            throw new RequestError(401, "QQ 身份不属于当前应用，请重新授权。", "QQ_OAUTH_IDENTITY_INVALID");
+        const user = await profile(access, identity.openid, signal);
+        const account: VerifiedAccount = { cookie: "", oauth: access, profile: user };
+        await mutateState<Job, void>(owner, "oauth", "login", async (current, db) => {
+            if (!current || current.value.id !== job.id || !active(current.value) || current.value.status !== "authorizing") return { result: undefined };
+            await saveAccount(owner, "qq", account, db);
+            const next = { ...current.value, user, status: "success" as const, message: "QQ 账号已连接：" + user.nickname + "。QQ 音乐播放需另行授权。" };
             cacheProfile(owner, account);
-            job.user = user;
-            job.status = "success";
-            job.message = "QQ 账号已连接：" + user.nickname + "。QQ 音乐播放需另行授权。";
-        }
-        catch (error) {
-            if (active(job)) {
-                job.status = "error";
-                job.message = error instanceof RequestError ? error.message : "QQ 授权未完成，请重新连接。";
-            }
-        }
-        if (job.expiresAt <= Date.now() && ["pending", "authorizing"].includes(job.status)) {
-            job.status = "expired";
-            job.message = "QQ 登录已过期，请重新连接。";
-        }
-        return publicJob(job);
-    })();
-    return job.completion;
+            return { entry: stored(next), result: undefined };
+        });
+    } catch (error) {
+        await mutateState<Job, void>(owner, "oauth", "login", current => {
+            if (!current || current.value.id !== job.id || !active(current.value)) return { result: undefined };
+            const next = { ...current.value, status: "error" as const, message: error instanceof RequestError ? error.message : "QQ 授权未完成，请重新连接。" };
+            return { entry: stored(next), result: undefined };
+        });
+    } finally { controllers.delete(job.id); }
+    return pollQqOAuth(owner, job.id);
 }
 async function renew(owner: string, account: VerifiedAccount): Promise<VerifiedAccount> {
     const existing = runtime.qqOAuthRefresh ??= new Map();
     if (existing.has(owner))
         return existing.get(owner)!;
     const pending = (async () => {
+        const claimId = randomUUID();
+        const claim = await mutateState<{ id: string; token: string }, { owned: boolean; account: VerifiedAccount }>(owner, "refresh", "qq", async (current, db) => {
+            const latest = await verified(owner, db);
+            if (!latest) throw replaced();
+            if (latest.oauth.accessToken !== account.oauth.accessToken) return { result: { owned: false, account: latest } };
+            const token = digest(account.oauth.accessToken).toString("hex");
+            if (current && current.expiresAt > Date.now() && current.value.token === token) return { result: { owned: false, account: latest } };
+            return { entry: { value: { id: claimId, token }, expiresAt: Date.now() + 30000 }, result: { owned: true, account: latest } };
+        });
+        if (!claim.owned) {
+            if (claim.account.oauth.accessToken !== account.oauth.accessToken) return claim.account;
+            const deadline = Date.now() + 25000;
+            while (Date.now() < deadline) {
+                await new Promise(resolve => setTimeout(resolve, 250));
+                const next = await verified(owner);
+                if (!next) throw replaced();
+                if (next.oauth.accessToken !== account.oauth.accessToken) return next;
+            }
+            throw new RequestError(502, "QQ 账号正在刷新，请稍后重试。", "QQ_REFRESH_PENDING");
+        }
+        try {
         const signal = AbortSignal.timeout(20000);
         const config = qqOAuthConfig();
         if (!config || !account.oauth.refreshToken)
@@ -245,11 +275,15 @@ async function renew(owner: string, account: VerifiedAccount): Promise<VerifiedA
         const access = grant(await official("token", { grant_type: "refresh_token", client_id: config.appId, client_secret: config.secret, refresh_token: account.oauth.refreshToken }, signal), config.appId);
         const next: VerifiedAccount = { ...account, oauth: access };
         next.profile = await profile(access, account.profile.id, signal);
-        if ((await verified(owner))?.oauth.accessToken !== account.oauth.accessToken)
-            throw new RequestError(409, "QQ 账号连接已更新。", "QQ_LOGIN_REPLACED");
-        (await saveAccount(owner, "qq", next));
+        await accountTransaction(owner, "qq", async db => {
+            if ((await verified(owner, db))?.oauth.accessToken !== account.oauth.accessToken) throw replaced();
+            await saveAccount(owner, "qq", next, db);
+        });
         cacheProfile(owner, next);
         return next;
+        } finally {
+            await mutateState<{ id: string; token: string }, void>(owner, "refresh", "qq", current => ({ entry: current?.value.id === claimId ? null : undefined, result: undefined }));
+        }
     })().finally(() => { if (existing.get(owner) === pending)
         existing.delete(owner); });
     existing.set(owner, pending);
@@ -267,12 +301,13 @@ export async function qqOAuthStatus(owner: string, signal: AbortSignal, refresh 
         const cached = runtime.qqOAuthProfiles?.get(owner);
         const user = !refresh && cached?.token === account.oauth.accessToken && cached.until > Date.now() ? cached.user : await profile(account.oauth, account.profile.id, signal);
         signal.throwIfAborted();
-        if ((await verified(owner))?.oauth.accessToken !== account.oauth.accessToken)
-            throw new RequestError(409, "QQ 账号连接已更新。", "QQ_LOGIN_REPLACED");
-        if (user.nickname !== account.profile.nickname || user.avatar !== account.profile.avatar) {
-            account.profile = user;
-            (await saveAccount(owner, "qq", account));
-        }
+        const snapshot = account;
+        await accountTransaction(owner, "qq", async db => {
+            const latest = await verified(owner, db);
+            if (latest?.oauth.accessToken !== snapshot.oauth.accessToken) throw replaced();
+            if (user.nickname !== latest.profile.nickname || user.avatar !== latest.profile.avatar)
+                await saveAccount(owner, "qq", { ...latest, profile: user }, db);
+        });
         cacheProfile(owner, { ...account, profile: user });
         return { ...base, authorized: true, nickname: user.nickname, user: publicUser(user), profileAvailable: true, message: "QQ 账号已连接：" + user.nickname + "。QQ 音乐播放需另行授权。" };
     }

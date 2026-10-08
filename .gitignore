@@ -18,6 +18,9 @@ test-results/
 !.env.example
 *.tsbuildinfo
 *.log
+.netlify/
+.music-runtime-trace.json
+work/netlify-*/
 data/
 *.db
 *.db-shm

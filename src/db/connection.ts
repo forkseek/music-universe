@@ -34,7 +34,7 @@ export function postgresOptions(value: string | undefined): PoolConfig {
     for (const key of ["sslmode", "sslcert", "sslkey", "sslrootcert"])
         url.searchParams.delete(key);
     return { connectionString: url.href, ssl: local ? false : { rejectUnauthorized: true },
-        max: 3, idleTimeoutMillis: 20000, connectionTimeoutMillis: 15000,
+        max: 3, idleTimeoutMillis: 20000, connectionTimeoutMillis: 15000, allowExitOnIdle: true,
         statement_timeout: 15000, application_name: "music-universe" };
 }
 export async function openDatabase(value = process.env.DATABASE_URL): Promise<DatabaseContext> {

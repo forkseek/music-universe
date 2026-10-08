@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto";
 import { RequestError } from "@/lib/server/errors";
 import { platformCall } from "./runtime";
 import type { Platform } from "./types";
+import { deleteStates, putStates, readState } from "./shared-state";
+import { audioResponseLimits, audioTooLarge, boundedAudioBody, boundedAudioRange } from "./audio-response";
 
 const domains: Record<Platform, string[]> = {
   qq: ["stream.qqmusic.qq.com"], netease: ["music.126.net", "music.163.com"],
@@ -21,16 +23,16 @@ export function trustedMediaUrl(provider: Platform, value: string) {
   } catch { return null; }
 }
 interface Ticket { userId: string; provider: Platform; url: string; expires: number; decoded?: Promise<{ buffer: Buffer; contentType: string }> }
-const runtime = globalThis as typeof globalThis & { musicMediaTickets?: Map<string, Ticket> };
-const tickets = () => runtime.musicMediaTickets ??= new Map();
-export function revokeMedia(userId: string, provider: Platform) { for (const [id, t] of tickets()) if (t.userId === userId && t.provider === provider) tickets().delete(id); }
-export function musicMediaTicket(userId: string, provider: Platform, url: string) {
+export async function revokeMedia(userId: string, provider: Platform) {
+  await deleteStates(userId, "media", value => (value as Ticket).provider === provider);
+  if (provider === "qq") await deleteStates(userId, "qq-media");
+}
+export async function musicMediaTicket(userId: string, provider: Platform, url: string) {
   const approved = trustedMediaUrl(provider, url);
   if (!approved) throw new RequestError(502, "平台返回的音源地址暂不受支持。", "AUDIO_HOST_REJECTED");
-  for (const [id, t] of tickets()) if (t.expires <= Date.now()) tickets().delete(id);
-  while (tickets().size >= 160) tickets().delete(tickets().keys().next().value!);
   const id = randomBytes(24).toString("base64url");
-  tickets().set(id, { userId, provider, url: approved.href, expires: Date.now() + 15 * 60 * 1000 });
+  const expires = Date.now() + 15 * 60 * 1000;
+  await putStates(userId, "media", [{ key: id, value: { userId, provider, url: approved.href, expires }, expiresAt: expires }]);
   return "/api/music/audio?ticket=" + id;
 }
 export function parseAudioRange(range: string | null, size: number) {
@@ -64,9 +66,10 @@ async function upstream(ticket: Ticket, range: string | null, signal: AbortSigna
   throw new RequestError(502, "音源跳转过多。", "AUDIO_REDIRECT_LIMIT");
 }
 export async function musicAudio(userId: string, id: string, range: string | null, signal: AbortSignal) {
-  const ticket = tickets().get(id);
+  const ticket = (await readState<Ticket>(userId, "media", id))?.value;
   if (!ticket || ticket.userId !== userId || ticket.expires <= Date.now()) throw new RequestError(404, "播放已过期，请重新点击歌曲。", "AUDIO_NOT_FOUND");
   if (range && !/^bytes=(\d*)-(\d*)$/.test(range)) return new Response(null, { status: 416 });
+  const boundedRange = boundedAudioRange(range);
   const headers = new Headers({ "Cache-Control": "private, no-store", "Vary": "Cookie", "Accept-Ranges": "bytes", "X-Content-Type-Options": "nosniff" });
   const auth = new URL(ticket.url).hash;
   if (ticket.provider === "qishui" && auth.startsWith("#auth=")) {
@@ -81,8 +84,9 @@ export async function musicAudio(userId: string, id: string, range: string | nul
       return { buffer: Buffer.from(result.buffer as Uint8Array), contentType: String(result.contentType) };
     })().catch(error => { ticket.decoded = undefined; throw error; });
     const decoded = await ticket.decoded;
-    const selected = parseAudioRange(range, decoded.buffer.length);
+    const selected = parseAudioRange(boundedRange, decoded.buffer.length);
     if (!selected) return new Response(null, { status: 416, headers: { "Content-Range": "bytes */" + decoded.buffer.length } });
+    if (selected.end - selected.start + 1 > audioResponseLimits().responseBytes) throw audioTooLarge();
     headers.set("Content-Type", decoded.contentType);
     headers.set("Content-Length", String(selected.end - selected.start + 1));
     if (selected.partial) headers.set("Content-Range", `bytes ${selected.start}-${selected.end}/${decoded.buffer.length}`);
@@ -90,9 +94,8 @@ export async function musicAudio(userId: string, id: string, range: string | nul
     ticket.decoded = undefined;
     return new Response(new Uint8Array(decoded.buffer.subarray(selected.start, selected.end + 1)), { status: selected.partial ? 206 : 200, headers });
   }
-  const response = await upstream(ticket, range, signal);
+  const response = await upstream(ticket, boundedRange, signal);
   for (const name of ["Content-Type", "Content-Length", "Content-Range"]) { const v = response.headers.get(name); if (v) headers.set(name, v); }
-  let size = 0;
-  const limited = response.body!.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({ transform(chunk, controller) { size += chunk.length; if (size > maxAudioBytes) { controller.error(new Error("Audio size limit")); return; } controller.enqueue(chunk); } }));
+  const limited = await boundedAudioBody(response);
   return new Response(limited, { status: response.status, headers });
 }

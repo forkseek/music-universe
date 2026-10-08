@@ -5,7 +5,7 @@ import { qqAccountResolve } from "@/lib/music/providers/qq-account";
 export const runtime = "nodejs";
 export function GET(request: NextRequest) {
   return withUser(request, async (userId) => {
-    requireSameOrigin(request); limitPlayerRequests(userId);
+    requireSameOrigin(request); await limitPlayerRequests(userId);
     const mid = request.nextUrl.searchParams.get("mid") ?? "";
     const mediaMid = request.nextUrl.searchParams.get("mediaMid") ?? "";
     const account = await qqAccountResolve(userId, mid, mediaMid, request.signal);

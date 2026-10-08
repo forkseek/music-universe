@@ -18,7 +18,7 @@ export async function GET(request: NextRequest, context: Context) {
     return withUser(request, async (userId) => {
         requireSameOrigin(request);
         const provider = parsePlatform(params.provider);
-        rateLimitMusic(userId, params.action);
+        await rateLimitMusic(userId, params.action);
         if (params.action === "status")
             return platformStatus(userId, provider, request.signal);
         if (params.action === "search")
@@ -34,14 +34,14 @@ export async function POST(request: NextRequest, context: Context) {
     const params = await context.params;
     return withUser(request, async (userId) => {
         const provider = parsePlatform(params.provider);
-        rateLimitMusic(userId, params.action);
+        await rateLimitMusic(userId, params.action);
         const body = record(await readJson(request, 4096));
         if (params.action === "login")
             return startPlatformLogin(userId, provider, request);
         if (params.action === "cancel")
             return cancelLogin(userId, provider, text(body.loginId, 100));
         if (params.action === "logout") {
-            revokeMedia(userId, provider);
+            await revokeMedia(userId, provider);
             return (await logoutPlatform(userId, provider));
         }
         if (params.action === "play")

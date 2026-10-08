@@ -36,6 +36,8 @@ function worker() {
     if (runtime.musicPlatformWorker === state) runtime.musicPlatformWorker = undefined;
   };
   child.on("error", close); child.on("exit", close);
+  // A warm function may reuse this worker, but an idle IPC channel must not hold a request open.
+  child.unref(); child.channel?.unref();
   return state;
 }
 export function platformCall(provider: Platform, action: string, args: Values = {}, cookie = "", signal?: AbortSignal): Promise<Values> {
@@ -43,10 +45,14 @@ export function platformCall(provider: Platform, action: string, args: Values = 
   const state = worker();
   if (state.pending.size >= 32) throw new RequestError(429, "音乐平台正在处理其他请求，请稍后重试。", "PLATFORM_BUSY");
   return new Promise((resolve, reject) => {
+    state.child.ref(); state.child.channel?.ref();
     const id = randomUUID();
     const abort = () => { state.pending.delete(id); cleanup(); reject(new RequestError(504, "音乐平台响应较慢，请稍后重试。", "PLATFORM_TIMEOUT")); };
     const timer = setTimeout(abort, action === "search" ? 25000 : 45000);
-    const cleanup = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); };
+    const cleanup = () => {
+      clearTimeout(timer); signal?.removeEventListener("abort", abort);
+      if (state.pending.size <= 1) { state.child.unref(); state.child.channel?.unref(); }
+    };
     state.pending.set(id, { resolve, reject, cleanup });
     signal?.addEventListener("abort", abort, { once: true });
     state.child.send({ id, provider, action, args, cookie }, error => { if (error) abort(); });

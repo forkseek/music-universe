@@ -2,9 +2,9 @@
 
 专辑封面成为恒星，歌曲按曲序化为星球。包含全屏 3D 浏览、播放跟随、同步歌词、本地音频与 LRC、平台搜索和账号授权，以及自动顺序播放下一首。大厅和星系在同一个网站运行，不需要访客连接本机端口。
 
-此发布分支 **codex/render-neon** 使用 Next.js 16.3.8、React、Vite/R3F、Drizzle 和 PostgreSQL。原 master 分支及本机工程保留 SQLite；不自动迁移或公开本机数据库和账号凭证。
+此发布分支 **codex/netlify-neon** 使用 Next.js 16.3.8、React、Vite/R3F、Drizzle 和 PostgreSQL。原 master 分支及本机工程保留 SQLite；不自动迁移或公开本机数据库和账号凭证。
 
-[在 Render 免费部署](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Fforkseek%2Fmusic-universe%2Ftree%2Fcodex%2Frender-neon) · [完整 Render + Neon 操作说明](docs/DEPLOY_RENDER_NEON.md) · [验证与限制](docs/DEPLOYMENT_VALIDATION.md)
+[Netlify + Neon 部署说明](docs/DEPLOY_NETLIFY_NEON.md) · [本分支验证记录](docs/NETLIFY_VALIDATION.md) · [原 Render 方案](docs/DEPLOY_RENDER_NEON.md)
 
 ## 本地运行发布分支
 
@@ -25,6 +25,7 @@ npm run check
 npm --prefix apps/music-universe test
 npm run build
 npm run test:restart
+npm run test:cloud-runtime -- --browser
 npm run storage:check
 npm start
 ~~~
@@ -33,11 +34,11 @@ npm start
 
 ## 部署与账号
 
-Render 配置见根目录 render.yaml，明确使用 Free，数据由 Neon 保存。APP_ORIGIN 自动取 Render 提供的网址；绑定自有域名时再显式设置。应用使用 HttpOnly 匿名会话隔离音乐库，清除 Cookie 或换设备不会自动找回原库。
+Netlify 配置见根目录 netlify.toml，数据由 Neon 保存。音乐搜索、扫码状态、播放票据和限流使用加密的共享状态表，支持不同云函数实例接力处理请求。APP_ORIGIN 必须配置为实际 HTTPS 站点地址。应用使用 HttpOnly 匿名会话隔离音乐库，清除 Cookie 或换设备不会自动找回原库。
 
 云服务器关闭 Electron 桌面登录。QQ 官方网站授权需自己的 QQ Connect 应用配置，QQ 身份授权不授予音乐版权或会员权限；网易云二维码仍需真实账号确认。平台搜索、可播放权限、实际音源获取是独立步骤。完整边界和免费休眠、额度限制见部署说明。
 
-本分支的部署步骤以 DEPLOY_RENDER_NEON.md 为准；旧 CloudBase、SQLite 持久卷等文档保留作 master 历史参考。当前云端账号与公网验收尚待授权完成，不能把测试通过视作已经上线。
+本分支的部署步骤以 DEPLOY_NETLIFY_NEON.md 为准；Render、CloudBase、SQLite 持久卷等文档保留作历史参考。公网发布和账号授权必须另行验证，不能把本地测试通过视作已经上线。
 
 ## 文件格式
 
@@ -87,13 +88,13 @@ src/lib/music/worlds.ts         世界创建、幂等保存、归属查询
 src/lib/music/journeys.ts       路线归属、事务保存和读取
 src/lib/music/demo/             60 首核对来源的元数据模板
 src/lib/server/                匿名会话、同源请求和错误边界
-src/db/                        SQLite 连接、16 张表、自动迁移
+src/db/                        PostgreSQL 连接、19 张表、自动迁移
 src/types/                     Track、Source、MusicWorld
 public/samples/                正常、重复、版本、坏文件样例
 tests/                        单元、数据库结构和浏览器测试
 ```
 
-File 和 Demo Provider 在普通浏览器可用；QQ 仅在开关开启且官方 H5 面板 SDK 报告已授权时开放适配流程，本机只完成 SDK 替身测试。网易云、酷狗、汽水、Spotify 的账号直连仍不可用，但可导入用户提供的文件并保留对应来源，详见[五平台接入边界](docs/PLATFORM_CONNECTION_STATUS.md)。导入文件内的 `provider` 是用户声明来源，不代表平台身份已验证。不会保存音乐平台 Cookie、登录凭证或音频直链。Demo 的 60 首歌曲来自 20 位艺术家的 20 张专辑，核对链接见 [Demo 来源](docs/DEMO_SOURCES.md)，不冒充用户的收藏或播放历史。
+File 和 Demo Provider 在普通浏览器可用。本分支的音乐后台提供网易云扫码、平台搜索和既有音源获取代码；真实可用性仍取决于本人授权、版权及上游服务响应。QQ 身份授权需要自己的官方应用配置，不能替代音乐播放权益；酷狗和汽水的桌面登录在云端关闭；Spotify 没有账号直连。导入文件内的 `provider` 是用户声明来源，不代表平台身份已验证。后台账号凭据和短期播放票据仅加密保存在数据库，不写入客户端、GitHub 或导入曲目；短期状态会过期清理。Demo 的 60 首歌曲来自 20 位艺术家的 20 张专辑，核对链接见 [Demo 来源](docs/DEMO_SOURCES.md)，不冒充用户的收藏或播放历史。
 
 产品暂定：中文为主界面语言；首页文案“让散落的歌单，在这里相遇。”；主演示曲目沿用项目规则中的 Let Down / Alison / Starless。未提供额外用户歌单。
 

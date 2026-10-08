@@ -5,7 +5,7 @@ import { resolvePlayingAlbum } from "@/lib/music/platforms/albums";
 export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
   return withUser(request, async userId => {
-    rateLimitMusic(userId, "album");
+    await rateLimitMusic(userId, "album");
     return resolvePlayingAlbum(userId, await readJson(request, 4096), request.signal);
   });
 }

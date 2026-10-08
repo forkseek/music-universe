@@ -3,7 +3,7 @@ import { z } from "@/lib/validation";
 import { RequestError } from "@/lib/server/errors";
 import { radiohandAlbum } from "../providers/radiohand-qq";
 import { readAccount } from "./accounts";
-import { registerPlatformTrack } from "./catalog";
+import { registerPlatformTracks } from "./catalog";
 import { platformCall } from "./runtime";
 import { locateAlbumTrack, matchesRecording, orderedAlbumTracks } from "./album-matching";
 import { record, text, type AlbumResolution, type AlbumTrack, type Platform, type PlayingIdentity, type Values } from "./types";
@@ -50,7 +50,7 @@ async function nativeAlbum(provider: "netease" | "qq", albumId: string, trackId:
     cache().set(provider + ":" + id, entry);
     return raw;
 }
-function materialize(userId: string, provider: "netease" | "qq", raw: Values, identity: PlayingIdentity): AlbumResolution | null {
+async function materialize(userId: string, provider: "netease" | "qq", raw: Values, identity: PlayingIdentity): Promise<AlbumResolution | null> {
     const albumId = text(raw.id, 100), name = text(raw.name), cover = coverPath(provider, albumId);
     const values = orderedAlbumTracks<Values & {
         discNumber: number;
@@ -59,15 +59,10 @@ function materialize(userId: string, provider: "netease" | "qq", raw: Values, id
         const value = record(item);
         return { ...value, discNumber: Math.max(1, Number(value.discNumber) || 1), trackNumber: Math.max(1, Number(value.trackNumber) || index + 1) };
     }));
-    const tracks: AlbumTrack[] = [];
-    for (const value of values) {
-        if (!text(value.name))
-            return null;
-        const song = registerPlatformTrack(userId, provider, { ...value, albumId, album: name, cover });
-        if (!song)
-            return null;
-        tracks.push({ ...song, discNumber: value.discNumber, trackNumber: value.trackNumber });
-    }
+    if (values.some(value => !text(value.name))) return null;
+    const songs = await registerPlatformTracks(userId, provider, values.map(value => ({ ...value, albumId, album: name, cover })));
+    if (songs.length !== values.length) return null;
+    const tracks: AlbumTrack[] = songs.map((song, index) => ({ ...song, discNumber: values[index].discNumber, trackNumber: values[index].trackNumber }));
     const match = locateAlbumTrack(identity, tracks, identity.provider === provider);
     if (!match)
         return null;
@@ -91,7 +86,7 @@ export async function resolvePlayingAlbum(userId: string, input: unknown, signal
     for (const attempt of attempts) {
         try {
             const raw = await nativeAlbum(attempt.provider, attempt.albumId, attempt.trackId, (await readAccount(userId, attempt.provider))?.cookie || "", signal);
-            const result = materialize(userId, attempt.provider, raw, identity);
+            const result = await materialize(userId, attempt.provider, raw, identity);
             if (result)
                 return result;
         }
@@ -114,7 +109,7 @@ export async function resolvePlayingAlbum(userId: string, input: unknown, signal
         seen.add(id);
         try {
             const raw = await nativeAlbum("netease", id, "", (await readAccount(userId, "netease"))?.cookie || "", signal);
-            const result = materialize(userId, "netease", raw, { ...identity, provider: identity.provider, trackId: identity.provider === "netease" ? identity.trackId : undefined });
+            const result = await materialize(userId, "netease", raw, { ...identity, provider: identity.provider, trackId: identity.provider === "netease" ? identity.trackId : undefined });
             if (result)
                 return result;
         }

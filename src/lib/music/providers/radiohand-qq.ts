@@ -3,6 +3,8 @@ import { randomBytes } from "node:crypto";
 import { z } from "@/lib/validation";
 import { RequestError } from "@/lib/server/errors";
 import { qqAccountCredentials } from "./qq-account";
+import { putStates, readState, rateLimitShared } from "../platforms/shared-state";
+import { audioResponseLimits, boundedAudioBody, boundedAudioRange } from "../platforms/audio-response";
 
 // Independently implemented adapter for radiohand's /api/qq/* contract.
 // Account authorization stays in the operator's existing radiohand service.
@@ -214,24 +216,15 @@ function allowedAudioUrl(value: unknown) {
 }
 
 interface AudioTicket { userId: string; url: string; expires: number }
-const runtimeStore = globalThis as typeof globalThis & { __musicWorldAudioTickets?: Map<string, AudioTicket>; __musicWorldPlayerRates?: Map<string, { time: number; count: number }> };
-function tickets() { return runtimeStore.__musicWorldAudioTickets ??= new Map(); }
-
-export function limitPlayerRequests(userId: string) {
-  const rates = runtimeStore.__musicWorldPlayerRates ??= new Map();
-  const now = Date.now();
-  for (const [key, entry] of rates) if (now - entry.time > 60000) rates.delete(key);
-  const entry = rates.get(userId) ?? { time: now, count: 0 };
-  if (++entry.count > 40 || rates.size > 2000) throw new RequestError(429, "操作太快了，请稍等一会儿再试。", "PLAYER_RATE_LIMIT");
-  rates.set(userId, entry);
+export async function limitPlayerRequests(userId: string) {
+  if (!await rateLimitShared(userId, "qq-player", 40)) throw new RequestError(429, "操作太快了，请稍等一会儿再试。", "PLAYER_RATE_LIMIT");
 }
 
-export function issueAudioTicket(userId: string, url: string, quality: string, trial: boolean) {
+export async function issueAudioTicket(userId: string, url: string, quality: string, trial: boolean) {
   const source = allowedAudioUrl(url);
-  const now = Date.now(), store = tickets();
-  for (const [key, item] of store) if (item.expires <= now || store.size >= 200) store.delete(key);
   const ticket = randomBytes(32).toString("base64url");
-  store.set(ticket, { userId, url: source, expires: now + 30 * 60 * 1000 });
+  const expires = Date.now() + 30 * 60 * 1000;
+  await putStates(userId, "qq-media", [{ key: ticket, value: { userId, url: source, expires }, expiresAt: expires }]);
   return { provider: "qq" as const, url: "/api/qq/audio?ticket=" + ticket, playable: true, trial, quality: quality || "标准音质" };
 }
 
@@ -266,12 +259,12 @@ export async function radiohandCover(mid: string, signal: AbortSignal) {
 
 export async function radiohandAudio(userId: string, ticket: string, range: string | null, signal: AbortSignal) {
   if (!/^[A-Za-z0-9_-]{43}$/.test(ticket)) throw new RequestError(404, "播放请求无效。", "AUDIO_NOT_FOUND");
-  const entry = tickets().get(ticket);
+  const entry = (await readState<AudioTicket>(userId, "qq-media", ticket))?.value;
   if (!entry || entry.userId !== userId || entry.expires <= Date.now()) throw new RequestError(404, "播放地址已过期，请重新点击播放。", "AUDIO_NOT_FOUND");
   if (range && !/^bytes=\d{1,12}-\d{0,12}$/.test(range)) throw new RequestError(416, "音频范围无效。", "INVALID_AUDIO_RANGE");
   const headers: Record<string, string> = { Referer: "https://y.qq.com/", "User-Agent": "Mozilla/5.0" };
-  if (range) headers.Range = range;
-  const upstream = await fetch(entry.url, { headers, cache: "no-store", redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(90000)]) });
+  if (range) headers.Range = boundedAudioRange(range)!;
+  const upstream = await fetch(entry.url, { headers, cache: "no-store", redirect: "error", signal: AbortSignal.any([signal, AbortSignal.timeout(audioResponseLimits().enabled ? 45000 : 90000)]) });
   if (![200, 206].includes(upstream.status) || !upstream.body) throw new RequestError(502, "音频暂时无法读取，请重新播放。", "AUDIO_UPSTREAM_FAILED");
   const type = upstream.headers.get("content-type")?.split(";")[0] ?? "audio/mpeg";
   if (!/^(audio\/[a-z0-9.+-]+|video\/mp4|application\/octet-stream)$/i.test(type) || Number(upstream.headers.get("content-length")) > 300 * 1024 * 1024) {
@@ -279,5 +272,5 @@ export async function radiohandAudio(userId: string, ticket: string, range: stri
   }
   const output = new Headers({ "Content-Type": type, "Cache-Control": "private, no-store", "Accept-Ranges": "bytes", "X-Content-Type-Options": "nosniff", Vary: "Cookie" });
   for (const key of ["content-length", "content-range"]) { const value = upstream.headers.get(key); if (value) output.set(key, value); }
-  return new Response(upstream.body, { status: upstream.status, headers: output });
+  return new Response(await boundedAudioBody(upstream, 300 * 1024 * 1024), { status: upstream.status, headers: output });
 }

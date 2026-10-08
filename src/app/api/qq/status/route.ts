@@ -5,7 +5,7 @@ import { qqAccountStatus } from "@/lib/music/providers/qq-account";
 export const runtime = "nodejs";
 export function GET(request: NextRequest) {
   return withUser(request, async (userId) => {
-    requireSameOrigin(request); limitPlayerRequests(userId);
+    requireSameOrigin(request); await limitPlayerRequests(userId);
     return await qqAccountStatus(userId, request.signal, request.nextUrl.searchParams.get("refresh") === "1") ?? radiohandStatus(request.signal);
   }, true);
 }
