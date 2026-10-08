@@ -21,7 +21,7 @@ test-results/
 .netlify/
 .music-runtime-trace.json
 work/netlify-*/
-data/
+/data/
 *.db
 *.db-shm
 *.db-wal
