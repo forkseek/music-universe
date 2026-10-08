@@ -49,6 +49,8 @@ npm run test:cloud-runtime -- --browser
 
 在授权后的 Netlify 云端构建完成后，必须继续检查：实际 HTTPS `/api/health`、匿名会话、搜索、二维码状态、本人真实扫码、可播放音源、歌词、连续切歌以及跨页面访问。取得公网网址前，不宣称网站已经上线。
 
+仓库的 `.github/workflows/netlify-linux.yml` 使用官方 CLI 在 Linux 完成无账号凭据的构建和包内容检查。本机 Windows 的边缘函数打包有路径兼容问题，正式部署使用 Linux 构建；已通过的记录见 [验证说明](NETLIFY_VALIDATION.md)。
+
 ## 免费范围与限制
 
 - 当前 Netlify Free 为每月 300 credits，额度是硬上限，用尽会暂停服务；不启用付费计划或自动充值。访问量和音乐流量都会消耗额度，免费不等于无限访问或可用性保证。
