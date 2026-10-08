@@ -1,0 +1,47 @@
+name: Netlify Linux build
+
+on:
+  push:
+    branches: [codex/netlify-neon]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: netlify-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NODE_VERSION: "24"
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      NEXT_TELEMETRY_DISABLED: "1"
+      NETLIFY_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/music-universe/package-lock.json
+      - run: npm ci --include=dev
+      - name: Build with the official Netlify adapter without account credentials
+        run: npm exec --yes --package=netlify-cli@27.11.2 -- netlify build --offline
+      - run: npm run typecheck
+      - name: Verify packaged backend, migrations and secret exclusion
+        shell: bash
+        run: |
+          test -s .netlify/functions/___netlify-server-handler.zip
+          unzip -Z1 .netlify/functions/___netlify-server-handler.zip > "$RUNNER_TEMP/music-function-files.txt"
+          grep -q 'integrations/mineradio/worker.cjs' "$RUNNER_TEMP/music-function-files.txt"
+          grep -q 'src/db/postgres-migrations/0001_good_blur.sql' "$RUNNER_TEMP/music-function-files.txt"
+          if grep -E '(^|/)\.env($|\.(local|production|development|test)($|\.))' "$RUNNER_TEMP/music-function-files.txt"; then exit 1; fi
+          test -n "$(find .netlify/edge-functions-dist -name '*.eszip' -print -quit)"
