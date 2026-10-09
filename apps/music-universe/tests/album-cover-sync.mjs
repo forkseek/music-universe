@@ -16,8 +16,10 @@ header.writeUInt32LE(16000, 28); header.writeUInt16LE(2, 32); header.writeUInt16
 const wav = Buffer.concat([header, pcm]), browser = await chromium.launch({ headless: true, args: ['--enable-unsafe-swiftshader'] })
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } }), errors = [], results = []
 let searchCalls = 0, releaseFirstAlbum, releaseSecondAlbum, releaseFailedSelection
+let failInitialCover = true
 const albumCalls = {}, coverCalls = {}
 page.on('pageerror', error => errors.push(error.message))
+await page.route(demoCover, route => failInitialCover ? route.fulfill({ status: 502, body: 'initial cover fixture failure' }) : route.continue())
 await page.addInitScript(() => {
   localStorage.setItem('music-universe:platform', 'netease'); sessionStorage.removeItem('music-universe:exploration:v1')
   window.coverUploads = []; window.coverChanges = []; window.coverImageRequests = []
@@ -86,7 +88,15 @@ const ready = async id => {
 }
 try {
   await page.goto(url); await expect(canvas).toHaveAttribute('data-frame-count', /\d+/, { timeout: 60000 }); await dismissEntryGuide(page)
+  await canvas.evaluate(el => { window.initialCoverCanvas = el })
+  await expect(page.getByTestId('scene-cover-error')).toBeVisible({ timeout: 30000 })
+  expect(await canvas.evaluate(el => el === window.initialCoverCanvas)).toBe(true)
+  failInitialCover = false
+  await page.getByRole('button', { name: '重试封面', exact: true }).click()
   await expect(canvas).toHaveAttribute('data-star-cover-ready', 'true', { timeout: 30000 })
+  await expect(page.getByTestId('scene-cover-error')).toHaveCount(0)
+  expect(await canvas.evaluate(el => el === window.initialCoverCanvas)).toBe(true)
+  results.push({ initialCoverFailureKeepsCanvasAlive: true, manualRetryRestoresCover: true })
   const originalCover = await canvas.getAttribute('data-star-cover-url')
   await canvas.evaluate(el => {
     window.originalCoverCanvas = el

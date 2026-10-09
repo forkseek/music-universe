@@ -2,5 +2,8 @@
 .album-sync-status[data-state='loading'] { color: #a4b2c2; }
 .album-sync-status[data-state='error'], .album-sync-status[data-state='unidentified'] { color: #c1b29c; }
 .album-sync-status button { pointer-events: auto; white-space: nowrap; border: 0; border-bottom: 1px solid #9d825766; background: transparent; color: #dec49b; cursor: pointer; font: inherit; padding: 0 2px; }
+.scene-cover-error { bottom: 210px; }
+.hud-hidden:not(.player-revealed) .scene-cover-error { bottom: 112px; }
 .hud-hidden:not(.player-revealed) .album-sync-status { bottom: 80px; opacity: .65; }
 @media (max-width: 700px) { .album-sync-status { left: 20px; max-width: calc(100vw - 40px); bottom: 162px; font-size: 10px; } }
+@media (max-width: 700px) { .scene-cover-error { bottom: 198px; } }

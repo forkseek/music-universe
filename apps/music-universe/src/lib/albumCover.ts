@@ -1,5 +1,5 @@
 export interface AlbumCoverOptions { timeoutMs: number; attempts: number; retryDelayMs: number; ttlMs: number; capacity: number }
-export const ALBUM_COVER_OPTIONS: AlbumCoverOptions = { timeoutMs: 10000, attempts: 2, retryDelayMs: 250, ttlMs: 60000, capacity: 2 }
+export const ALBUM_COVER_OPTIONS: AlbumCoverOptions = { timeoutMs: 30000, attempts: 2, retryDelayMs: 250, ttlMs: 60000, capacity: 2 }
 
 function abortableDelay(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {

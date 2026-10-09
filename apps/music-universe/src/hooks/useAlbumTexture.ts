@@ -14,15 +14,15 @@ function coverTexture(url: string, image?: HTMLImageElement) {
 }
 
 /** Keep the previous texture bound until the replacement image and GPU texture are ready. */
-export function useAlbumTexture(url: string, onReady: () => void, onTone?: (tone: AlbumTone | null) => void) {
+export function useAlbumTexture(url: string, onReady: () => void, onTone?: (tone: AlbumTone | null) => void, onError?: (error: Error | null) => void, retryKey = 0) {
   const { invalidate, gl } = useThree()
-  const [failed, setFailed] = useState<{ url: string; error: Error } | null>(null)
   const [texture, setTexture] = useState(() => coverTexture(url, albumCoverLoader.peek(url)))
   const current = useRef(texture)
-  const callbacks = useRef({ onReady, onTone })
-  useEffect(() => { callbacks.current = { onReady, onTone } }, [onReady, onTone])
+  const callbacks = useRef({ onReady, onTone, onError })
+  useEffect(() => { callbacks.current = { onReady, onTone, onError } }, [onReady, onTone, onError])
   useEffect(() => {
     const controller = new AbortController()
+    callbacks.current.onError?.(null)
     const apply = (image: HTMLImageElement) => {
       if (controller.signal.aborted) return
       if (current.current.userData.coverUrl !== url || current.current.image !== image) {
@@ -38,12 +38,15 @@ export function useAlbumTexture(url: string, onReady: () => void, onTone?: (tone
     const prepared = albumCoverLoader.peek(url)
     if (prepared) apply(prepared)
     else void albumCoverLoader.load(url, controller.signal).then(apply).catch(error => {
-      if (!controller.signal.aborted) setFailed({ url, error: error instanceof Error ? error : new Error('专辑封面未能加载，请重新选择图片。') })
+      if (controller.signal.aborted) return
+      // A failed image must not unmount the renderer, camera or previous cover.
+      callbacks.current.onError?.(error instanceof Error ? error : new Error('专辑封面未能加载，请重新选择图片。'))
+      invalidate()
+      callbacks.current.onReady()
     })
     return () => controller.abort()
-  }, [url, gl, invalidate])
+  }, [url, gl, invalidate, retryKey])
   // The decoded image may be shared, but this scene owns and disposes each GPU texture.
   useEffect(() => () => texture.dispose(), [texture])
-  if (failed?.url === url) throw failed.error
   return texture
 }

@@ -54,6 +54,8 @@ interface SceneProps {
   audioAnalysis: ReturnType<typeof useAudioAnalysis>
   motionPreset: CameraMotionPreset
   reducedMotion: boolean
+  onCoverError?: (error: Error | null) => void
+  coverRetryKey?: number
 }
 
 /** 点击星球后，该轨道与自转改按歌曲时长推导的周期运行；其余天体行为保持不变。 */
@@ -156,9 +158,9 @@ function WorldMotion({ world, time, playing, planetCount, children }: { world: W
   return <group ref={world} name="album-solar-system" rotation={[0.018, -0.025, 0]}>{children}</group>
 }
 
-function AlbumStar({ galaxy, time, navigation, onToggleTarget, pulseTarget, playing, toolsVisible, onReady, lighting, audioAnalysis, reducedMotion }: SceneProps & { time: TimeRef; onReady: () => void; lighting: AlbumLightState }) {
+function AlbumStar({ galaxy, time, navigation, onToggleTarget, pulseTarget, playing, toolsVisible, onReady, lighting, audioAnalysis, reducedMotion, onCoverError, coverRetryKey }: SceneProps & { time: TimeRef; onReady: () => void; lighting: AlbumLightState }) {
   const onTone = useCallback((tone: AlbumTone | null) => { lighting.target = mapAlbumToneToLight(tone) }, [lighting])
-  const cover = useAlbumTexture(galaxy.star.albumCover, onReady, onTone)
+  const cover = useAlbumTexture(galaxy.star.albumCover, onReady, onTone, onCoverError, coverRetryKey)
   const light = useRef<PointLight>(null)
   const halo = useRef<SpriteMaterial>(null)
   const corona = useRef<Sprite>(null)
@@ -453,6 +455,8 @@ export default function GalaxyScene(props: SceneProps) {
   }, [])
   const moving = props.playing && visible
   const [readyGeneration, setReadyGeneration] = useState(-1)
+  const [coverError, setCoverError] = useState<Error | null>(null)
+  const [coverRetryKey, setCoverRetryKey] = useState(0)
   const markReady = useCallback(() => setReadyGeneration(props.generation), [props.generation])
   useEffect(() => {
     if (readyGeneration !== props.generation) return
@@ -471,8 +475,9 @@ export default function GalaxyScene(props: SceneProps) {
       <SceneLighting />
       <ScenePostProcessing budget={budget} enabled={postEnabled} />
       <AlbumLightTransition lighting={lighting} radius={props.galaxy.star.scale} />
-      <Suspense fallback={null}><Contents key={props.generation} {...props} playing={moving} onReady={markReady} labels={labels} lighting={lighting} budget={budget} /></Suspense>
+      <Suspense fallback={null}><Contents key={props.generation} {...props} playing={moving} onReady={markReady} onCoverError={setCoverError} coverRetryKey={coverRetryKey} labels={labels} lighting={lighting} budget={budget} /></Suspense>
     </Canvas>
+    {coverError && <p className="album-sync-status scene-cover-error" role="alert" data-testid="scene-cover-error"><span>{coverError.message}</span><button type="button" onClick={() => { setCoverError(null); setCoverRetryKey(value => value + 1) }}>重试封面</button></p>}
     {props.showLabels && <SceneLabels {...props} labels={labels} onLabelActivity={() => requestFrame.current?.()} />}
   </SceneBoundary>
 }
