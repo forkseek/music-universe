@@ -10,7 +10,11 @@
 [functions]
   included_files = ["src/db/postgres-migrations/**", "integrations/mineradio/**"]
 
-# The maintained OpenNext adapter is selected automatically by Netlify.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Source ZIP builds need this explicit adapter declaration. Let Netlify install
+# the maintained current version; do not pin a second copy in package.json.
 # DATABASE_URL, MUSIC_CREDENTIAL_SECRET, APP_ORIGIN, MUSIC_DESKTOP_LOGIN=0 and
 # MUSIC_AUDIO_RESPONSE_BYTES=4194304 must be configured in the site environment.
 # Free uses default scopes; mark credentials as secrets in production context.
