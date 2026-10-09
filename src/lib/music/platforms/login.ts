@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { RequestError } from "@/lib/server/errors";
 import { logoutQqAccount, qqAccountStatus } from "../providers/qq-account";
 import { cancelQqOAuth, pollQqOAuth, startQqOAuth } from "../providers/qq-oauth";
+import { readQqMusicProfile } from "../providers/qq-music-session";
 import { desktopAvailable, electronPath, integrationRoot, platformCall } from "./runtime";
 import { deleteAccount, readAccount, saveAccount } from "./accounts";
 import { platformLabels, record, text, type Platform, type MusicProfile, type PlatformStatus, type Values } from "./types";
@@ -55,12 +56,15 @@ async function complete(job: LoginJob, cookie: string) {
     const signal = AbortSignal.timeout(45000);
     let profile: MusicProfile;
     {
-      const result = await platformCall(job.provider, "status", {}, cookie, signal);
-      if (result.loggedIn !== true || result.reauthRequired === true) throw new Error("expired");
-      profile = parsePlatformProfile(result);
+      if (job.provider === "qq") profile = await readQqMusicProfile(cookie, signal);
+      else {
+        const result = await platformCall(job.provider, "status", {}, cookie, signal);
+        if (result.loggedIn !== true || result.reauthRequired === true) throw new Error("expired");
+        profile = parsePlatformProfile(result);
+      }
       if (!profile.id || !profile.nickname) throw new RequestError(502, "平台暂未返回用户信息，请重新连接。", "PROFILE_UNAVAILABLE");
       if (!active(job)) return;
-      saveAccount(job.userId, job.provider, { cookie, profile });
+      saveAccount(job.userId, job.provider, { cookie, profile, ...(job.provider === "qq" ? { loginMethod: "official-window" as const } : {}) });
     }
     if (!active(job)) return;
     job.user = profile; terminal(job, "success", "已连接 " + profile.nickname);
@@ -70,7 +74,7 @@ async function complete(job: LoginJob, cookie: string) {
 }
 
 export function cancelLogin(userId: string, provider: Platform, loginId?: string) {
-  if (provider === "qq") return cancelQqOAuth(userId, loginId);
+  if (provider === "qq") cancelQqOAuth(userId, loginId);
   const job = jobs().get(keyOf(userId, provider));
   if (job && (!loginId || job.id === loginId)) { terminal(job, "cancelled", "登录已取消。"); jobs().delete(keyOf(userId, provider)); }
   return { ok: true };
@@ -81,7 +85,7 @@ export function logoutPlatform(userId: string, provider: Platform) {
   return { ok: true };
 }
 export async function startPlatformLogin(userId: string, provider: Platform, request: Request) {
-  if (provider === "qq") return startQqOAuth(userId, request);
+  if (provider === "qq" && !desktopAvailable(request)) { cancelLogin(userId, provider); return startQqOAuth(userId, request); }
   if (provider !== "netease" && !desktopAvailable(request)) throw new RequestError(409, desktopLoginMessage(provider), "DESKTOP_LOGIN_UNAVAILABLE");
   for (const [key, job] of jobs()) if (job.expiresAt <= Date.now()) { terminal(job, "expired", "二维码已过期，请重新连接。"); jobs().delete(key); }
   cancelLogin(userId, provider);
@@ -121,8 +125,8 @@ export async function startPlatformLogin(userId: string, provider: Platform, req
   return publicLogin(job);
 }
 export async function pollPlatformLogin(userId: string, provider: Platform, id: string) {
-  if (provider === "qq") return pollQqOAuth(userId, id);
   const job = jobs().get(keyOf(userId, provider));
+  if (provider === "qq" && !job) return pollQqOAuth(userId, id);
   if (!job || job.id !== id) throw new RequestError(404, "登录已失效，请重新连接。", "LOGIN_NOT_FOUND");
   if (job.expiresAt <= Date.now() && ["pending", "scanned", "authorizing"].includes(job.status)) terminal(job, "expired", "登录已过期，请重新连接。");
   if (provider === "netease" && job.key && active(job)) {

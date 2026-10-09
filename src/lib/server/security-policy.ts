@@ -33,8 +33,8 @@ export function contentSecurityPolicy(nonce: string, development: boolean, paren
 export function universeContentSecurityPolicy() {
   return [
     "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' blob: data: https:", "font-src 'self' data:", "media-src 'self' blob: data: https:",
-    "connect-src 'self' https:", "worker-src 'self' blob:", "object-src 'none'",
+    "img-src 'self' blob: data: https: http://127.0.0.1:43891", "font-src 'self' data:", "media-src 'self' blob: data: https: http://127.0.0.1:43891",
+    "connect-src 'self' https: http://127.0.0.1:43891", "worker-src 'self' blob:", "object-src 'none'",
     "base-uri 'self'", "form-action 'self'", "frame-src 'none'", "frame-ancestors 'self'",
   ].join("; ") + ";";
 }

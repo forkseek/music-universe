@@ -5,7 +5,7 @@ export const record = (v: unknown): Values => v && typeof v === "object" && !Arr
 export const text = (v: unknown, max = 300) => (typeof v === "string" || typeof v === "number" ? String(v) : "").replace(/[\u0000-\u001f\u007f]/g, "").slice(0, max);
 export interface MusicProfile { id: string; nickname: string; avatar: string }
 export interface QqOAuthGrant { kind: "qq-connect"; appId: string; accessToken: string; refreshToken?: string; expiresAt: number }
-export interface PlatformAccount { cookie: string; profile: MusicProfile; oauth?: QqOAuthGrant }
+export interface PlatformAccount { cookie: string; profile: MusicProfile; oauth?: QqOAuthGrant; loginMethod?: "official-window" }
 export interface PlatformStatus { provider: Platform; authorized: boolean; user?: MusicProfile; message: string; loginMode: "qr" | "window" | "oauth"; loginAvailable: boolean; musicAuthorized?: boolean }
 export interface PlatformTrack { provider: Platform; id: string; playbackId: string; name: string; artist: string; album: string; albumId?: string; cover: string; duration: number; fee: number }
 export interface PlayingIdentity {

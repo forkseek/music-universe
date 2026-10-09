@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-09",
+  "lint": true,
+  "typecheck": true,
+  "tests": {
+    "files": 24,
+    "passed": 193
+  },
+  "nextProductionBuild": true,
+  "universeProductionBuild": true,
+  "realLoginEntrypoints": [
+    "qq-official-window",
+    "netease-qr",
+    "kugou-official-window",
+    "qishui-qr"
+  ],
+  "realPhoneAuthorization": false,
+  "browser": {
+    "pageErrors": 0,
+    "reload": true,
+    "disconnect": true,
+    "mobileOverflow": false
+  },
+  "referenceZip": "Mineradio_3-5-8.zip",
+  "referenceLoginFlowSHA256": "26092b7bd9ad1c2483c995cd74af7c4b69c318249ca0bf6996e5ed9a1968eb7e"
+}

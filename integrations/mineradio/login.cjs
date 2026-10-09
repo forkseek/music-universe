@@ -106,16 +106,25 @@ async function qishuiQr() {
   const result = await auth.getQrCode();
   const token = result.data?.token;
   if (!token || !result.data.qrcode) throw new Error('qr');
-  send({ status: 'pending', image: result.data.qrcode, message: '请用汽水音乐 App 扫码并确认。' });
+  send({ status: 'pending', image: result.data.qrcode, message: '请用抖音 App 扫码，按官方页面提示确认汽水音乐登录。' });
+  let delayMs = 2300;
   while (!done) {
-    await new Promise(resolve => setTimeout(resolve, 2300));
+    await new Promise(resolve => setTimeout(resolve, delayMs));
     if (done) break;
-    const state = await auth.checkQrConnect(token);
-    const data = state.data || {};
-    if (Number(data.error_code) === 0 && /(?:^|;\s*)(?:sessionid|sessionid_ss|sid_guard|sid_tt)=[^;\s]+/.test(config.cookie)) {
-      finish({ status: 'success', cookie: config.cookie });
-    } else if (String(data.status) === '2') send({ status: 'scanned', message: '已扫码，请在手机上确认。' });
-    else if (String(data.status) === 'expired' || Number(data.error_code) === 2) finish({ status: 'expired' });
+    try {
+      const state = await auth.checkQrConnect(token);
+      const data = state.data || {};
+      delayMs = 4500;
+      if (Number(data.error_code) === 0 && (['3', 'confirmed'].includes(String(data.status)) || data.confirmed === true || Boolean(data.session_cookie)) && /(?:^|;\s*)(?:sessionid|sessionid_ss|sid_guard|sid_tt)=[^;\s]+/.test(config.cookie)) {
+        finish({ status: 'success', cookie: config.cookie });
+      } else if (String(data.status) === '2' || data.status === 'scanned') send({ status: 'scanned', message: '已扫码，请在手机上确认。' });
+      else if (String(data.status) === 'expired' || Number(data.error_code) === 2) finish({ status: 'expired' });
+      else if (Number(data.error_code) === 7) { delayMs = 60000; send({ status: 'pending', message: '平台要求稍后重试，正在等待下一次状态检查。' }); }
+    } catch (error) {
+      if (error.code === 'QISHUI_MFA_CANCELLED') return finish({ status: 'cancelled', message: '二次验证已取消，请重新连接。' });
+      delayMs = 8000;
+      send({ status: 'pending', message: '状态检查暂时失败，正在重试；请保留官方验证窗口。' });
+    }
   }
 }
 app.whenReady().then(async () => {

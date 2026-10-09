@@ -9,6 +9,7 @@ node_modules/
 .next-login-audit-*/
 work/qq-integration/
 work/mineradio-reference/
+work/mineradio-3-5-8-reference/
 work/music-platform-*/
 work/music-platform-*.json
 out/
