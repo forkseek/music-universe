@@ -6,6 +6,7 @@ import { readAccount } from "./accounts";
 import { registerPlatformTracks } from "./catalog";
 import { platformCall } from "./runtime";
 import { locateAlbumTrack, matchesRecording, orderedAlbumTracks } from "./album-matching";
+import { albumCoverCacheHeaders } from "./album-cover-response";
 import { record, text, type AlbumResolution, type AlbumTrack, type Platform, type PlayingIdentity, type Values } from "./types";
 const identitySchema = z.object({
     provider: z.enum(["qq", "netease", "kugou", "qishui"]).optional(), trackId: z.string().regex(/^[A-Za-z0-9_-]{1,100}$/).optional(),
@@ -24,7 +25,8 @@ const globalAlbums = globalThis as typeof globalThis & {
 const cache = () => globalAlbums.musicAlbumMetadata ??= new Map();
 const supported = (p: Platform): p is "netease" | "qq" => p === "netease" || p === "qq";
 const safeId = (p: Platform, id: string) => p === "netease" ? /^\d{1,20}$/.test(id) : /^[A-Za-z0-9]{1,64}$/.test(id);
-const coverPath = (p: Platform, id: string) => p === "qq" ? "/api/qq/cover?mid=" + encodeURIComponent(id) : "/api/music/album/cover?provider=netease&id=" + encodeURIComponent(id);
+// A new pathname also escapes old browser caches; a CDN purge cannot clear them.
+const coverPath = (p: Platform, id: string) => p === "qq" ? "/api/qq/cover?mid=" + encodeURIComponent(id) : "/api/music/album/cover/v2/netease/" + encodeURIComponent(id);
 async function nativeAlbum(provider: "netease" | "qq", albumId: string, trackId: string, cookie: string, signal: AbortSignal): Promise<Values> {
     signal.throwIfAborted();
     if ((!albumId && !trackId) || !safeId(provider, albumId || trackId))
@@ -155,5 +157,5 @@ export async function readAlbumCover(provider: string, id: string, signal: Abort
     finally {
         reader.releaseLock();
     }
-    return new Response(Buffer.concat(chunks), { headers: { "Content-Type": type, "Cache-Control": "public, max-age=86400", "X-Content-Type-Options": "nosniff" } });
+    return new Response(Buffer.concat(chunks), { headers: { "Content-Type": type, ...albumCoverCacheHeaders(provider, id) } });
 }

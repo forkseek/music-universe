@@ -21,7 +21,8 @@ function describeTrack(provider: Platform, raw: Values): PlatformTrack | null {
         return null;
     const playbackId = randomUUID();
     let cover = text(raw.cover, 2048);
-    if (!cover.startsWith("/api/qq/cover?") && !cover.startsWith("/api/music/album/cover?") && !/^https?:\/\//.test(cover))
+    if (!cover.startsWith("/api/qq/cover?") && !cover.startsWith("/api/music/album/cover?")
+        && !/^\/api\/music\/album\/cover\/v2\/netease\/\d{1,20}$/.test(cover) && !/^https?:\/\//.test(cover))
         cover = "";
     if (cover.startsWith("http:"))
         cover = "https:" + cover.slice(5);

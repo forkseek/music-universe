@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { locateAlbumTrack, matchesRecording, orderedAlbumTracks } from '@/lib/music/platforms/album-matching';
 import { readAlbumCover, resolvePlayingAlbum } from '@/lib/music/platforms/albums';
+import { GET as legacyCover } from '@/app/api/music/album/cover/route';
+import { GET as pathCover } from '@/app/api/music/album/cover/v2/[provider]/[id]/route';
+import { NextRequest } from 'next/server';
 import { resolvePlatformSong } from '@/lib/music/platforms/catalog';
 import type { DatabaseContext } from '@/db/connection';
 import { openDatabase } from './helpers/database';
@@ -45,7 +48,8 @@ describe('recording identity and ordered album metadata',()=>{
     const result=await resolvePlayingAlbum('owner',identity,signal());
     expect(result.trackIndex).toBe(1);expect(result.matchedBy).toBe('id');
     expect(result.album.tracks.map(t=>t.name)).toEqual(['First','Second','Third']);
-    expect(result.album.cover).toBe('/api/music/album/cover?provider=netease&id=10');
+    expect(result.album.cover).toBe('/api/music/album/cover/v2/netease/10');
+    expect(result.album.tracks.every(t=>t.cover===result.album.cover)).toBe(true);
     expect(result.album.tracks.every(t=>t.playbackId)).toBe(true);
     expect(JSON.stringify(result)).not.toContain('private-cookie');
     await expect(resolvePlatformSong('another','netease',result.album.tracks[0].playbackId,signal())).rejects.toMatchObject({code:'TRACK_NOT_FOUND'});
@@ -85,5 +89,39 @@ describe('recording identity and ordered album metadata',()=>{
     vi.stubGlobal('fetch',vi.fn());
     await expect(readAlbumCover('netease','10',signal())).rejects.toMatchObject({code:'ALBUM_COVER_INVALID'});
     expect(fetch).not.toHaveBeenCalled();
+  });
+  it('separates two albums by pathname and upstream bytes, with cache identity declared for Netlify',async()=>{
+    fixtures.call.mockImplementation(async (_provider,_action,args)=>({...nativeAlbum(),id:args.albumId,
+      cover:`https://p1.music.126.net/${args.albumId}.jpg`}));
+    vi.stubGlobal('fetch',vi.fn(async(url)=>new Response(new Uint8Array(String(url).includes('/10.jpg')?[255,216,10]:[255,216,20]),
+      {headers:{'Content-Type':'image/jpg'}})));
+    const request=new NextRequest('http://localhost/api/music/album/cover/v2/netease/10?id=20');
+    const first=await pathCover(request,{params:Promise.resolve({provider:'netease',id:'10'})});
+    const second=await pathCover(new NextRequest('http://localhost/api/music/album/cover/v2/netease/20'),
+      {params:Promise.resolve({provider:'netease',id:'20'})});
+    expect(Array.from(new Uint8Array(await first.arrayBuffer()))).toEqual([255,216,10]);
+    expect(Array.from(new Uint8Array(await second.arrayBuffer()))).toEqual([255,216,20]);
+    for(const [response,id] of [[first,'10'],[second,'20']] as const){
+      expect(response.headers.get('netlify-vary')).toBe('query=provider|id');
+      expect(response.headers.get('netlify-cdn-cache-control')).toContain('max-age=86400');
+      expect(response.headers.get('cache-control')).toContain('max-age=300');
+      expect(response.headers.get('x-album-cover-id')).toBe(id);
+    }
+  });
+  it('keeps the legacy endpoint isolated by query and rejects invalid identities without caching errors',async()=>{
+    fixtures.call.mockResolvedValue(nativeAlbum());
+    vi.stubGlobal('fetch',vi.fn(async()=>new Response(new Uint8Array([255,216,10]),{headers:{'Content-Type':'image/jpg'}})));
+    const valid=await legacyCover(new NextRequest('http://localhost/api/music/album/cover?provider=netease&id=10'));
+    expect(valid.status).toBe(200);
+    expect(valid.headers.get('netlify-vary')).toBe('query=provider|id');
+    for(const response of [await legacyCover(new NextRequest('http://localhost/api/music/album/cover?provider=invalid&id=10')),
+      await pathCover(new NextRequest('http://localhost/api/music/album/cover/v2/netease/not-an-id'),
+        {params:Promise.resolve({provider:'netease',id:'not-an-id'})})]){
+      expect(response.status).toBe(400);
+      expect(response.headers.get('cache-control')).toBe('no-store');
+      expect(response.headers.get('netlify-cdn-cache-control')).toBe('no-store');
+      expect(response.headers.get('netlify-vary')).toBe(valid.headers.get('netlify-vary'));
+    }
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

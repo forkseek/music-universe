@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
 import { readAlbumCover } from "@/lib/music/platforms/albums";
-import { RequestError } from "@/lib/server/errors";
+import { albumCoverErrorResponse } from "@/lib/music/platforms/album-cover-response";
 export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   try { return await readAlbumCover(request.nextUrl.searchParams.get("provider") || "", request.nextUrl.searchParams.get("id") || "", request.signal); }
-  catch (error) { return Response.json({ error: { message: "专辑封面暂不可用。" } }, { status: error instanceof RequestError ? error.status : 502 }); }
+  catch (error) { return albumCoverErrorResponse(error); }
 }

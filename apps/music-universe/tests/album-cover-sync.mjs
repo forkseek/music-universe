@@ -65,10 +65,10 @@ await page.route('**/api/music/**', async route => {
     if (song.albumId === '901' && albumCalls['901'] === 1) await new Promise(resolve => { releaseFirstAlbum = resolve })
     if (song.albumId === '902') await new Promise(resolve => { releaseSecondAlbum = resolve })
     return send({ album: { provider: 'netease', id: song.albumId, name: song.album, artist: song.artist,
-      cover: `/api/music/album/cover?provider=netease&id=${song.albumId}`, tracks: [song] }, trackId: song.id, trackIndex: 0, matchedBy: 'id' })
+      cover: `/api/music/album/cover/v2/netease/${song.albumId}`, tracks: [song] }, trackId: song.id, trackIndex: 0, matchedBy: 'id' })
   }
-  if (action === 'cover') {
-    const id = address.searchParams.get('id'); coverCalls[id] = (coverCalls[id] || 0) + 1
+  if (address.pathname.startsWith('/api/music/album/cover/v2/netease/')) {
+    const id = action; coverCalls[id] = (coverCalls[id] || 0) + 1
     if (id === '901' && coverCalls[id] === 1) return route.fulfill({ status: 502, body: 'transient image failure' })
     const color = id === '901' ? '#74b5e7' : '#dc789f'
     return route.fulfill({ contentType: 'image/svg+xml', body: `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><rect width="600" height="600" fill="${color}"/><circle cx="300" cy="300" r="170" fill="#152b45"/><text x="300" y="330" fill="#fff" font-size="70" text-anchor="middle">${id}</text></svg>` })
@@ -80,9 +80,9 @@ const canvas = page.locator('.galaxy-viewport canvas').first(), audio = page.get
 const ready = async id => {
   await expect(page.locator('.app-shell')).toHaveAttribute('data-album-id', `netease:album:${id}`)
   await expect(page.getByTestId('album-sync-status')).toHaveAttribute('data-state', 'ready')
-  await expect(canvas).toHaveAttribute('data-star-cover-url', new RegExp(`id=${id}$`))
+  await expect(canvas).toHaveAttribute('data-star-cover-url', new RegExp(`/v2/netease/${id}$`))
   await expect(canvas).toHaveAttribute('data-star-cover-ready', 'true')
-  await expect.poll(() => page.evaluate(id => window.coverUploads.some(image => image.url.endsWith(`id=${id}`) && image.width === 600), id)).toBe(true)
+  await expect.poll(() => page.evaluate(id => window.coverUploads.some(image => image.url.endsWith(`/v2/netease/${id}`) && image.width === 600), id)).toBe(true)
 }
 try {
   await page.goto(url); await expect(canvas).toHaveAttribute('data-frame-count', /\d+/, { timeout: 60000 }); await dismissEntryGuide(page)
@@ -109,7 +109,7 @@ try {
   await expect(canvas).toHaveAttribute('data-star-cover-url', originalCover)
   releaseFailedSelection(); releaseFailedSelection = undefined
   await ready('901')
-  expect(await page.evaluate(() => window.coverImageRequests.filter(url => url.endsWith('id=901')).length)).toBe(2)
+  expect(await page.evaluate(() => window.coverImageRequests.filter(url => url.endsWith('/v2/netease/901')).length)).toBe(2)
   expect(albumCalls['901']).toBe(1)
   await expect(page.locator('.app-shell')).toHaveClass(/hud-hidden/)
   expect(await audio.evaluate(el => !el.paused)).toBe(true)
@@ -123,11 +123,11 @@ try {
   await expect.poll(() => typeof releaseSecondAlbum).toBe('function')
   await page.getByTestId('music-search-play').nth(2).click(); await ready('903')
   releaseSecondAlbum(); releaseSecondAlbum = undefined; await page.waitForTimeout(350)
-  await expect(canvas).toHaveAttribute('data-star-cover-url', /id=903$/)
+  await expect(canvas).toHaveAttribute('data-star-cover-url', /v2\/netease\/903$/)
   await expect(page.getByTestId('music-search-now-title')).toHaveText('Latest')
   await page.getByTestId('music-search-play').first().click(); await ready('901')
   expect(albumCalls['901']).toBe(1)
-  expect(await page.evaluate(() => window.coverImageRequests.filter(url => url.endsWith('id=901')).length)).toBe(2)
+  expect(await page.evaluate(() => window.coverImageRequests.filter(url => url.endsWith('/v2/netease/901')).length)).toBe(2)
   const state = await page.evaluate(() => ({ emptyTextures: window.coverChanges.filter(value => !value.url || value.ready !== 'true'),
     canvasUnchanged: document.querySelector('.galaxy-viewport canvas') === window.originalCoverCanvas, gpuUploads: window.coverUploads.length }))
   expect(state.emptyTextures).toEqual([]); expect(state.canvasUnchanged).toBe(true)
