@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
-export async function verifyDeploymentBrowser(origin) {
+export async function verifyDeploymentBrowser(origin, { automaticNext: runAutomaticNext = true } = {}) {
   const browser = await chromium.launch({ headless: true, args: ["--enable-unsafe-swiftshader"] });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [], failedResources = [];
@@ -19,14 +19,22 @@ export async function verifyDeploymentBrowser(origin) {
     const room = page.frameLocator('iframe[title="专辑宇宙 3D 场景"]');
     await expect(room.locator(".galaxy-viewport canvas").first()).toBeVisible({ timeout: 45000 });
     await expect(room.locator(".scene-loading")).toHaveCount(0, { timeout: 45000 });
+    await expect(page.getByTestId("album-universe-room")).toHaveClass(/is-ready/, { timeout: 45000 });
+    await expect(page.locator(".mw-universe-loading")).toBeHidden({ timeout: 45000 });
+    await expect(page.locator(".mw-fog-transition")).toHaveCount(0, { timeout: 15000 });
     await room.locator("body").evaluate(() => document.fonts.ready);
+    const closeGuide = room.getByRole("button", { name: "关闭使用指南" });
+    if (await closeGuide.isVisible()) await closeGuide.click();
+    await expect(room.locator(".guide-dialog")).toHaveCount(0);
     expect(errors).toEqual([]);
     expect(failedResources).toEqual([]);
     mkdirSync("test-results", { recursive: true });
     await page.screenshot({ path: "test-results/render-universe.png" });
-    writeFileSync("test-results/render-browser-proof.json", JSON.stringify({ hallPortal: true, sameOriginUniverse: true, webgl: true, fontsLoaded: true, errors, failedResources }, null, 2));
+    writeFileSync("test-results/render-browser-proof.json", JSON.stringify({ hallPortal: true, sameOriginUniverse: true, loadingOverlayDismissed: true, webgl: true, fontsLoaded: true, errors, failedResources }, null, 2));
     console.log("Production hall → same-origin 3D universe verified.");
   } finally { await browser.close(); }
+
+  if (!runAutomaticNext) return;
 
   // Fixtures supply API data and generated tones; the production frontend uses native audio/WebGL.
   const automaticNext = spawn(process.execPath, ["tests/automatic-next.mjs"], {
