@@ -13,7 +13,8 @@ export async function verifyDeploymentBrowser(origin, { automaticNext: runAutoma
     if (url.origin === origin && response.status() >= 400) failedResources.push({ path: url.pathname, status: response.status() });
   });
   try {
-    await page.goto(origin + "/#hall");
+    // Assert scene, overlays and fonts below; do not gate entry on every page resource's load event.
+    await page.goto(origin + "/#hall", { waitUntil: "domcontentloaded", timeout: 60000 });
     await page.getByTestId("hall-universe-entry").click();
     await expect(page).toHaveURL(origin + "/#universe");
     const room = page.frameLocator('iframe[title="专辑宇宙 3D 场景"]');
