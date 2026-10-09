@@ -59,15 +59,16 @@ try {
     assert.equal(original.response.status, 200);
     const current = await request(path), warm = await request(path);
     const legacy = await request(`/api/music/album/cover?provider=netease&id=${identity.albumId}`);
+    const item = { id: identity.albumId, album: raw.name, trackIndex: resolved.json.trackIndex, path,
+      original: original.image, current: current.image, warm: warm.image, legacy: legacy.image, originalBytesMatched: false };
+    report.albums.push(item); save();
     for (const result of [current, warm, legacy]) {
       assert.equal(result.response.status, 200);
       assert.equal(result.image.sha256, original.image.sha256, `Wrong image bytes for ${identity.albumId}`);
       assert.equal(result.image.coverId, identity.albumId);
       if (result.image.vary) assert.match(result.image.vary, /query=[^,]*provider[^,]*id/);
     }
-    const item = { id: identity.albumId, album: raw.name, trackIndex: resolved.json.trackIndex, path,
-      original: original.image, current: current.image, warm: warm.image, legacy: legacy.image, originalBytesMatched: true };
-    report.albums.push(item); save(); console.log(JSON.stringify(item));
+    item.originalBytesMatched = true; save(); console.log(JSON.stringify(item));
   }
   assert.notEqual(report.albums[0].original.sha256, report.albums[1].original.sha256);
   const invalid = await request('/api/music/album/cover?provider=invalid&id=6548');
