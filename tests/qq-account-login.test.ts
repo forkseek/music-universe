@@ -62,10 +62,22 @@ describe("QQ official OAuth adapter (upstream fixtures, not real authorization)"
     await expect(completeQqOAuth(owner, "wrong-state", "fixture-code")).rejects.toMatchObject({ code: "QQ_OAUTH_STATE_INVALID" });
     expect(calls).not.toHaveBeenCalled();
   });
-  it("checks the configured callback's path and origin before issuing a login", () => {
+  it("checks the configured callback's path and origin before issuing a login", async () => {
     vi.stubEnv("QQ_CONNECT_REDIRECT_URI", "https://site.example/api/qq/login/callback");
-    expect(() => start()).toThrowError();
+    expect(qqOAuthAvailability(request())).toMatchObject({ configured: true, loginAvailable: false, loginErrorCode: "QQ_CALLBACK_ORIGIN_MISMATCH" });
+    expect(await qqOAuthStatus(owner, signal(), false, request())).toMatchObject({ configured: true, loginAvailable: false });
+    expect(() => start()).toThrowError(expect.objectContaining({ code: "QQ_CALLBACK_ORIGIN_MISMATCH" }));
     vi.stubEnv("QQ_CONNECT_REDIRECT_URI", "javascript:alert(1)"); expect(qqOAuthAvailability().loginAvailable).toBe(false);
+  });
+  it("checks the public callback origin behind a proxy and never exposes the App Key", () => {
+    vi.stubEnv("QQ_CONNECT_REDIRECT_URI", "https://music.example/api/qq/login/callback");
+    vi.stubEnv("APP_ORIGIN", "https://wrong.example");
+    expect(qqOAuthAvailability(request())).toMatchObject({ loginAvailable: false, loginErrorCode: "QQ_CALLBACK_ORIGIN_MISMATCH" });
+    vi.stubEnv("APP_ORIGIN", "https://music.example/");
+    expect(qqOAuthAvailability(request())).toMatchObject({ loginAvailable: true });
+    const login = startQqOAuth(owner, request());
+    expect(new URL(login.authorizeUrl).searchParams.get("redirect_uri")).toBe("https://music.example/api/qq/login/callback");
+    expect(JSON.stringify(login)).not.toContain("fixture-secret-for-this-application");
   });
   it("exchanges code -> token -> OpenID -> real profile, encrypts tokens and exposes only display fields", async () => {
     const { result, login } = await connected();

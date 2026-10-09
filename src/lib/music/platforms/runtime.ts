@@ -10,7 +10,20 @@ export function integrationRoot() { return process.env.MUSIC_INTEGRATION_ROOT ||
 export function electronPath() {
   return path.resolve(/* turbopackIgnore: true */ integrationRoot(), "../../node_modules/electron/dist", process.platform === "win32" ? "electron.exe" : process.platform === "darwin" ? "Electron.app/Contents/MacOS/Electron" : "electron");
 }
-export function desktopAvailable() { return process.env.MUSIC_DESKTOP_LOGIN !== "0" && existsSync(electronPath()); }
+export function desktopAvailable(request?: Request) {
+  if (process.env.MUSIC_DESKTOP_LOGIN === "0" || process.env.NETLIFY === "true" || !existsSync(electronPath())) return false;
+  // A server's installed Electron cannot open a login window on a remote visitor's computer.
+  // Check the public origin as well as Host, including reverse proxies with an internal URL.
+  try {
+    const origins: URL[] = [];
+    if (process.env.APP_ORIGIN?.trim()) origins.push(new URL(process.env.APP_ORIGIN.trim()));
+    if (request) {
+      const url = new URL(request.url);
+      origins.push(new URL(url.protocol + "//" + (request.headers.get("host") || url.host)));
+    }
+    return origins.every(url => ["http:", "https:"].includes(url.protocol) && !url.username && !url.password && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname));
+  } catch { return false; }
+}
 interface Pending { resolve: (v: Values) => void; reject: (e: Error) => void; cleanup: () => void }
 interface WorkerState { child: ChildProcess; pending: Map<string, Pending> }
 const runtime = globalThis as typeof globalThis & { musicPlatformWorker?: WorkerState };

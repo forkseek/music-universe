@@ -10,9 +10,9 @@ import { musicAudio, musicMediaTicket, parseAudioRange, revokeMedia, trustedMedi
 import { qqAccountCredentials } from "@/lib/music/providers/qq-account";
 import { qqOAuthStatus } from "@/lib/music/providers/qq-oauth";
 
-const fixtures = vi.hoisted(() => ({ db: null as DatabaseContext | null, call: vi.fn() }));
+const fixtures = vi.hoisted(() => ({ db: null as DatabaseContext | null, call: vi.fn(), desktop: vi.fn() }));
 vi.mock("@/db/connection", async original => ({ ...await original<typeof import("@/db/connection")>(), getDatabase: () => fixtures.db! }));
-vi.mock("@/lib/music/platforms/runtime", () => ({ desktopAvailable: () => true, integrationRoot: () => "", electronPath: () => "", platformCall: fixtures.call }));
+vi.mock("@/lib/music/platforms/runtime", () => ({ desktopAvailable: fixtures.desktop, integrationRoot: () => "", electronPath: () => "", platformCall: fixtures.call }));
 let owner: string; let other: string;
 const request = () => new Request("http://127.0.0.1:3002/api/music/netease/login", { method: "POST", headers: { host: "127.0.0.1:3002" } });
 const signal = () => new AbortController().signal;
@@ -21,6 +21,7 @@ beforeEach(() => {
   fixtures.db = openDatabase(":memory:"); owner = createSession(fixtures.db).userId; other = createSession(fixtures.db).userId;
   vi.stubEnv("MUSIC_CREDENTIAL_SECRET", "test-fixture-platform-encryption-only"); vi.stubEnv("QQ_CREDENTIAL_SECRET", "test-fixture-qq-encryption-only");
   fixtures.call.mockReset();
+  fixtures.desktop.mockReset(); fixtures.desktop.mockReturnValue(true);
   fixtures.call.mockImplementation(async (_provider, action) => action === "qr" ? { key: "fixture-key", image: "data:image/png;base64,fixture" } : action === "poll" ? { code: 801 } : { loggedIn: true, userId: "123456", nickname: "测试听众", avatar: "https://p1.music.126.net/fixture.jpg" });
 });
 afterEach(() => {
@@ -30,6 +31,26 @@ afterEach(() => {
 });
 
 describe("music platform identity and login lifecycle", () => {
+  it("explains unavailable public logins and rejects them using the same capability check", async () => {
+    fixtures.desktop.mockReturnValue(false);
+    const remote = new Request("https://music.example/api/music/kugou/login", { method: "POST" });
+    for (const provider of ["kugou", "qishui"] as const) {
+      const status = await platformStatus(owner, provider, remote.signal, remote);
+      expect(status).toMatchObject({ authorized: false, loginAvailable: false });
+      expect(status.message).toContain("暂不支持当前网站的在线账号登录");
+      await expect(startPlatformLogin(owner, provider, remote)).rejects.toMatchObject({ code: "DESKTOP_LOGIN_UNAVAILABLE", message: status.message });
+    }
+    expect(fixtures.desktop).toHaveBeenCalledWith(remote);
+    expect(await platformStatus(owner, "netease", remote.signal, remote)).toMatchObject({ loginAvailable: true, loginMode: "qr" });
+    expect(fixtures.call).not.toHaveBeenCalled();
+  });
+  it("does not ask an expired account to reconnect through an unavailable login", async () => {
+    saveAccount(owner, "kugou", { cookie: "fixture", profile: { id: "1", nickname: "Fixture", avatar: "" } });
+    fixtures.desktop.mockReturnValue(false); fixtures.call.mockResolvedValue({ loggedIn: false });
+    const result = await platformStatus(owner, "kugou", signal());
+    expect(result).toMatchObject({ authorized: false, loginAvailable: false });
+    expect(result.message).toContain("暂不支持当前网站的在线账号登录");
+  });
   it("encrypts credentials with per-user and per-platform authentication", () => {
     const account = { cookie: "MUSIC_U=fixture-private-cookie", profile: { id: "1", nickname: "Fixture", avatar: "" } };
     saveAccount(owner, "netease", account);

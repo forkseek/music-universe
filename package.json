@@ -24,7 +24,8 @@
     "db:generate": "drizzle-kit generate",
     "licenses:generate": "node scripts/generate-licenses.mjs",
     "demo:record": "node scripts/record-local-demo.mjs",
-    "check": "npm run lint && npm run typecheck && npm test"
+    "check": "npm run lint && npm run typecheck && npm test",
+    "music:helper": "node --env-file-if-exists=.env.local --conditions=react-server --import tsx scripts/music-helper.ts"
   },
   "overrides": {
     "NeteaseCloudMusicApi": {
