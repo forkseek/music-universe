@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { getDatabase, type DatabaseContext } from "@/db/connection";
-import { musicRuntimeState as state } from "@/db/schema";
+import { musicRateLimits as rates, musicRuntimeState as state } from "@/db/schema";
 import { seal, unseal } from "./vault";
 
 const capacities = { catalog: 1000, media: 32, "qq-media": 32, qr: 4, oauth: 1, refresh: 1, rate: 16 } as const;
@@ -71,10 +71,14 @@ export async function deleteStates(userId: string, namespace: StateNamespace, pr
   });
 }
 export async function rateLimitShared(userId: string, action: string, limit: number, windowMs = 60000) {
-  const allowed = await mutateState<{ count: number }, boolean>(userId, "rate", action, current => {
-    const count = current && current.expiresAt > Date.now() ? current.value.count : 0;
-    if (count >= limit) return { result: false };
-    return { entry: { value: { count: count + 1 }, expiresAt: current && current.expiresAt > Date.now() ? current.expiresAt : Date.now() + windowMs }, result: true };
-  });
-  return allowed;
+  const db = await getDatabase(), now = new Date(), expiresAt = new Date(now.getTime() + windowMs);
+  // PostgreSQL locks a conflicting row and evaluates this condition again after waiting.
+  // Independent functions therefore share the exact limit without read-modify-write races.
+  const result = await db.db.insert(rates).values({ userId, action, count: 1, expiresAt }).onConflictDoUpdate({
+    target: [rates.userId, rates.action],
+    set: { count: sql`CASE WHEN ${rates.expiresAt} <= ${now} THEN 1 ELSE ${rates.count} + 1 END`,
+      expiresAt: sql`CASE WHEN ${rates.expiresAt} <= ${now} THEN ${expiresAt} ELSE ${rates.expiresAt} END` },
+    setWhere: sql`${rates.expiresAt} <= ${now} OR ${rates.count} < ${limit}`,
+  }).returning({ count: rates.count });
+  return result.length > 0;
 }

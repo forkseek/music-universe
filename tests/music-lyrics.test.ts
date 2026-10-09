@@ -129,13 +129,15 @@ describe('existing integration worker lyric dispatch', () => {
         let message!: (value: object) => Promise<void>;
         const send = vi.fn();
         const source = readFileSync(new URL('../integrations/mineradio/worker.cjs', import.meta.url), 'utf8');
+        const requireFixture = Object.assign((id: string) => id === 'NeteaseCloudMusicApi' ? netease : id.endsWith('/kugou-api.js') ? kugou : id.endsWith('/qishui-api.js') ? qishui
+            : id === 'node:module' ? { createRequire: () => () => ({}) }
+                : id.endsWith('/netease-network.cjs') ? { createNeteaseNetwork: () => ({ run: (_signal: AbortSignal, action: () => unknown) => action() }) }
+                    : id.endsWith('/track-decryptor.js') ? { TrackDecryptor: class {} } : {}, { resolve: (id: string) => id });
         vm.runInNewContext(source, {
-            require: (id: string) => id === 'NeteaseCloudMusicApi' ? netease : id.endsWith('/kugou-api.js') ? kugou : id.endsWith('/qishui-api.js') ? qishui
-                : id.endsWith('/track-decryptor.js') ? { TrackDecryptor: class {
-                    } } : {},
+            require: requireFixture,
             process: { on: (event: string, handler: typeof message) => { if (event === 'message')
-                    message = handler; }, send, exit: vi.fn() },
-            Buffer, console: { log() { }, warn() { }, error() { } },
+                    message = handler; }, send, exit: vi.fn(), connected: true },
+            Buffer, AbortController, console: { log() { }, warn() { }, error() { } },
         });
         await message({ id: 'request-1', provider: 'netease', action: 'lyrics', args: { id: '42' }, cookie: 'MUST_NOT_BE_FORWARDED' });
         expect(netease.lyric).toHaveBeenCalledExactlyOnceWith({ id: '42', timestamp: expect.any(Number) });

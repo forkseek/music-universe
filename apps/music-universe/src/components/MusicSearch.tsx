@@ -43,15 +43,15 @@ export default function MusicSearch({ audio, lyrics, onClose }: { audio: AudioPl
   const label = musicPlatforms[provider]
   useEffect(() => { closeRef.current = onClose }, [onClose])
 
-  const refreshStatus = useCallback(async () => {
+  const refreshStatus = useCallback(async (force = true) => {
     statusRequest.current?.abort()
     const request = new AbortController(); statusRequest.current = request
     setAccountError('')
-    try { const state = await readConnection(provider, request.signal); if (!request.signal.aborted) setConnection(state) }
+    try { const state = await readConnection(provider, request.signal, force); if (!request.signal.aborted) setConnection(state) }
     catch (error) { if (!request.signal.aborted) setAccountError(messageOf(error)) }
   }, [provider])
 
-  useEffect(() => { setConnection(null); void refreshStatus(); return () => statusRequest.current?.abort() }, [refreshStatus])
+  useEffect(() => { setConnection(null); void refreshStatus(false); return () => statusRequest.current?.abort() }, [refreshStatus])
   useEffect(() => {
     alive.current = true
     const keydown = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); closeRef.current() } }

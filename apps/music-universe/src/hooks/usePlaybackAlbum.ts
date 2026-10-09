@@ -7,7 +7,7 @@ import { fetchPlayingAlbum } from '../lib/musicPlatforms'
 export interface AlbumSyncState { status: 'idle' | 'loading' | 'ready' | 'error' | 'unidentified'; message: string; albumId?: string; planetId?: string; trackIndex?: number }
 
 /** Subscribe once to the real HTMLAudioElement's `playing` events, regardless of the playback entry. */
-export function usePlaybackAlbum(audio: AudioPlayback, onResolved: (value: PlaybackAlbum) => boolean | void) {
+export function usePlaybackAlbum(audio: AudioPlayback, onResolved: (value: PlaybackAlbum) => boolean | void, deferred = false) {
   const [state, setState] = useState<AlbumSyncState>({ status: 'idle', message: '' })
   const [resolver] = useState(() => new PlaybackAlbumResolver(fetchPlayingAlbum))
   const latest = useRef(new LatestAlbumRequest())
@@ -33,7 +33,7 @@ export function usePlaybackAlbum(audio: AudioPlayback, onResolved: (value: Playb
       // The scene can defer an old song's metadata while the user resolves a new selection.
       // Check before changing audio.planetId, otherwise its still-playing card loses ownership.
       if (callbacks.current.onResolved(value) === false) { setState({ status: 'idle', message: '' }); return }
-      callbacks.current.audio.updateTrack(track.id, { planetId: value.planetId })
+      callbacks.current.audio.updateTrack(track.id, { planetId: value.planetId, cover: value.album.cover })
       handled.current = key
       setState({ status: 'ready', albumId: value.album.id, planetId: value.planetId, trackIndex: value.trackIndex,
         message: `${value.album.name} · 第 ${String(value.trackIndex + 1).padStart(2, '0')} / ${value.album.tracks.length} 首 · ${track.title}` })
@@ -54,6 +54,11 @@ export function usePlaybackAlbum(audio: AudioPlayback, onResolved: (value: Playb
     if (audio.playing && audio.track) synchronize(audio.track)
     return () => { generation.current++; latest.current.cancel(); pending.current = '' }
   }, [audio.track?.id, audio.track?.playbackInstance, synchronize]) // Pause/resume and album state never restart audio.
+  useEffect(() => {
+    // Recover a playing event superseded by the track-change effect, or a match deferred
+    // while a new selection was resolving. Failed selections must not strand the old star.
+    if (!deferred && audio.playing && audio.track) synchronize(audio.track)
+  }, [deferred, audio.playing, audio.track?.id, audio.track?.playbackInstance, synchronize])
   const retry = () => { const track = audio.getTrack(); if (track) synchronize(track, true) }
   return { ...state, retry }
 }

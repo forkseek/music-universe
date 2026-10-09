@@ -184,6 +184,9 @@ function AlbumStar({ galaxy, time, navigation, onToggleTarget, pulseTarget, play
     surface.uniforms.uGlowIntensity.value = 0.45 * lighting.intensityScale
     gl.domElement.dataset.starLightIntensity = intensity.toFixed(5)
     gl.domElement.dataset.audioHaloGain = haloGain.toFixed(5)
+    // Report the bound sampler, rather than the album metadata, for rendering diagnostics.
+    gl.domElement.dataset.starCoverUrl = cover.userData.coverUrl || ''
+    gl.domElement.dataset.starCoverReady = String(!!cover.image?.naturalWidth)
   })
   const radius = galaxy.star.scale
   return <group position={galaxy.star.position} name="album-star">

@@ -31,6 +31,12 @@ export const musicRuntimeState = pgTable("music_runtime_state", {
   updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull().$defaultFn(() => new Date()),
 }, (t) => [primaryKey({ columns: [t.userId, t.namespace, t.key] }), index("music_runtime_expiry_idx").on(t.expiresAt)]);
 
+/** Non-secret request counters use one atomic upsert instead of encrypted-state transactions. */
+export const musicRateLimits = pgTable("music_rate_limits", {
+  userId: owner(), action: text("action").notNull(), count: integer("count").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }).notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.action] }), index("music_rate_expiry_idx").on(t.expiresAt)]);
+
 export const musicSources = pgTable("music_sources", {
   id: id(), userId: owner(), provider: text("provider").$type<MusicProviderId>().notNull(),
   label: text("label").notNull(), createdAt: now(),

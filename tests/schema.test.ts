@@ -4,12 +4,13 @@ import { openDatabase } from "./helpers/database";
 import { albums, tracks, users, userTrackSignals } from "@/db/schema";
 
 describe("PostgreSQL schema", () => {
-  it("applies all migrations and creates the 19 application tables", async () => {
+  it("applies all migrations and creates the 20 application tables", async () => {
     const context = await openDatabase();
     try {
       const tables = await context.db.select({ tablename: sql<string>`tablename` }).from(sql`pg_tables`).where(sql`schemaname = 'public'`);
-      expect(tables).toHaveLength(19);
+      expect(tables).toHaveLength(20);
       expect(tables).toContainEqual({ tablename: "music_runtime_state" });
+      expect(tables).toContainEqual({ tablename: "music_rate_limits" });
       expect(tables).toContainEqual({ tablename: "qq_accounts" });
       expect(tables).toContainEqual({ tablename: "platform_accounts" });
     } finally { await context.close(); }

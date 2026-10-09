@@ -26,7 +26,7 @@ function worker() {
     const message = value as { id: string; error?: string; result?: Values };
     const pending = state.pending.get(message.id);
     if (!pending) return;
-    pending.cleanup(); state.pending.delete(message.id);
+    state.pending.delete(message.id); pending.cleanup();
     if (message.error) pending.reject(new RequestError(502, "音乐平台暂时无法响应，请稍后重试。", "PLATFORM_UNAVAILABLE"));
     else pending.resolve(message.result ?? {});
   });
@@ -47,14 +47,21 @@ export function platformCall(provider: Platform, action: string, args: Values = 
   return new Promise((resolve, reject) => {
     state.child.ref(); state.child.channel?.ref();
     const id = randomUUID();
-    const abort = () => { state.pending.delete(id); cleanup(); reject(new RequestError(504, "音乐平台响应较慢，请稍后重试。", "PLATFORM_TIMEOUT")); };
-    const timer = setTimeout(abort, action === "search" ? 25000 : 45000);
+    const finish = (error: Error) => {
+      if (!state.pending.delete(id)) return;
+      if (state.child.connected) state.child.send({ cancel: id }, () => {});
+      cleanup(); reject(error);
+    };
+    const abort = () => finish(signal?.reason ?? new DOMException("Aborted", "AbortError"));
+    const timer = setTimeout(() => finish(new RequestError(504, "音乐平台响应较慢，请稍后重试。", "PLATFORM_TIMEOUT")), action === "search" ? 25000 : 45000);
     const cleanup = () => {
       clearTimeout(timer); signal?.removeEventListener("abort", abort);
-      if (state.pending.size <= 1) { state.child.unref(); state.child.channel?.unref(); }
+      if (state.pending.size === 0) { state.child.unref(); state.child.channel?.unref(); }
     };
     state.pending.set(id, { resolve, reject, cleanup });
     signal?.addEventListener("abort", abort, { once: true });
-    state.child.send({ id, provider, action, args, cookie }, error => { if (error) abort(); });
+    state.child.send({ id, provider, action, args, cookie }, error => {
+      if (error) finish(new RequestError(503, "音乐连接已中断，请重试。", "BRIDGE_DISCONNECTED"));
+    });
   });
 }

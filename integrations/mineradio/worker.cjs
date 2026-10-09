@@ -1,11 +1,8 @@
 'use strict';
 // Private IPC only. Never forward upstream errors (which can include cookies).
-const netease = require('NeteaseCloudMusicApi');
-const kugou = require('./vendor/kugou-api.js');
-const qishui = require('./vendor/qishui-api.js');
-const { TrackDecryptor } = require('./vendor/qishui-audio-decryptor/track-decryptor.js');
-const QRCode = require('qrcode');
-const decode = new TrackDecryptor();
+const { createRequire } = require('node:module');
+const { createNeteaseNetwork } = require('./netease-network.cjs');
+let netease, neteaseNetwork, decode;
 console.log = console.warn = console.error = () => {};
 
 function lyricResult(provider, id, value) {
@@ -13,12 +10,48 @@ function lyricResult(provider, id, value) {
   return { provider, trackId: String(id), lyric };
 }
 
-async function invoke(provider, action, args, cookie) {
+async function invoke(provider, action, args, cookie, signal) {
   if (action === 'decode' && provider === 'qishui') {
+    if (!decode) {
+      const { TrackDecryptor } = require('./vendor/qishui-audio-decryptor/track-decryptor.js');
+      decode = new TrackDecryptor();
+    }
     const result = decode.decrypt({ encryptedBuffer: Buffer.from(args.buffer), spadeA: args.auth });
     return { buffer: result.buffer, contentType: result.extension === '.flac' ? 'audio/flac' : 'audio/mp4' };
   }
   if (provider === 'netease') {
+    if (!netease) {
+      netease = require('NeteaseCloudMusicApi');
+      const sdkRequire = createRequire(require.resolve('NeteaseCloudMusicApi/package.json'));
+      neteaseNetwork = createNeteaseNetwork(sdkRequire('axios'));
+    }
+    return neteaseNetwork.run(signal, () => invokeNetease(action, args, cookie));
+  }
+  if (provider === 'kugou') {
+    const kugou = require('./vendor/kugou-api.js');
+    if (action === 'lyrics') {
+      const response = await kugou.handleKugouLyric(args.id, '', 0);
+      return lyricResult(provider, args.id, response.lyric);
+    }
+    if (action === 'search') return { songs: await kugou.handleKugouSearch(args.query, args.limit, cookie, args.offset) };
+    if (action === 'status') return cookie ? kugou.getKugouLoginInfo(cookie) : { loggedIn: false };
+    if (action === 'resolve') return kugou.handleKugouSongUrl({ ...args, quality: 'standard' }, cookie);
+  }
+  if (provider === 'qishui') {
+    const qishui = require('./vendor/qishui-api.js');
+    if (action === 'lyrics') {
+      const response = await qishui.handleQishuiLyric(args.id, '');
+      return lyricResult(provider, args.id, response.lyric);
+    }
+    if (action === 'search') return qishui.handleQishuiSearch(args.query, args.limit, cookie, args.offset);
+    if (action === 'status') return cookie ? qishui.handleQishuiStatus(cookie) : { loggedIn: false };
+    if (action === 'resolve') return qishui.handleQishuiSongUrl({ ...args, quality: 'standard' }, cookie);
+  }
+  throw new Error('unsupported');
+}
+
+async function invokeNetease(action, args, cookie) {
+    const provider = 'netease';
     const options = { cookie: cookie || '', timestamp: Date.now() };
     if (action === 'lyrics') {
       const response = await netease.lyric({ id: args.id, timestamp: Date.now() });
@@ -69,6 +102,7 @@ async function invoke(provider, action, args, cookie) {
         quality: item?.level || 'standard', message: item?.url ? '' : '该歌曲暂不可播放，请登录并确认账号权益。' };
     }
     if (action === 'qr') {
+      const QRCode = require('qrcode');
       const response = await netease.login_qr_key(options);
       const key = response.body.data?.unikey;
       if (!key) throw new Error('qr');
@@ -81,29 +115,18 @@ async function invoke(provider, action, args, cookie) {
       if (response.body.code === 803 && !response.body.cookie) response = await netease.login_qr_check({ key: args.key, timestamp: Date.now() });
       return { code: response.body.code, cookie: response.body.cookie || '' };
     }
-  }
-  if (provider === 'kugou') {
-    if (action === 'lyrics') {
-      const response = await kugou.handleKugouLyric(args.id, '', 0);
-      return lyricResult(provider, args.id, response.lyric);
-    }
-    if (action === 'search') return { songs: await kugou.handleKugouSearch(args.query, args.limit, cookie, args.offset) };
-    if (action === 'status') return cookie ? kugou.getKugouLoginInfo(cookie) : { loggedIn: false };
-    if (action === 'resolve') return kugou.handleKugouSongUrl({ ...args, quality: 'standard' }, cookie);
-  }
-  if (provider === 'qishui') {
-    if (action === 'lyrics') {
-      const response = await qishui.handleQishuiLyric(args.id, '');
-      return lyricResult(provider, args.id, response.lyric);
-    }
-    if (action === 'search') return qishui.handleQishuiSearch(args.query, args.limit, cookie, args.offset);
-    if (action === 'status') return cookie ? qishui.handleQishuiStatus(cookie) : { loggedIn: false };
-    if (action === 'resolve') return qishui.handleQishuiSongUrl({ ...args, quality: 'standard' }, cookie);
-  }
   throw new Error('unsupported');
 }
-process.on('message', async ({ id, provider, action, args = {}, cookie = '' }) => {
-  try { process.send?.({ id, result: await invoke(provider, action, args, cookie) }); }
-  catch { process.send?.({ id, error: 'PLATFORM_UNAVAILABLE' }); }
+const active = new Map();
+process.on('message', async ({ id, cancel, provider, action, args = {}, cookie = '' }) => {
+  if (cancel) { active.get(cancel)?.abort(); return; }
+  if (active.size >= 32) { process.send?.({ id, error: 'PLATFORM_BUSY' }); return; }
+  const controller = new AbortController(); active.set(id, controller);
+  try {
+    const result = await invoke(provider, action, args, cookie, controller.signal);
+    if (!controller.signal.aborted && process.connected) process.send?.({ id, result });
+  } catch {
+    if (!controller.signal.aborted && process.connected) process.send?.({ id, error: 'PLATFORM_UNAVAILABLE' });
+  } finally { active.delete(id); }
 });
 process.on('disconnect', () => process.exit(0));

@@ -120,7 +120,7 @@ export default function App() {
     }
     navigation.focus(value.planetId)
     setSelectedId(value.planetId); setPulseTarget(value.planetId); setPlaying(true)
-  })
+  }, albumMusic.loading)
   const playingPlanet = galaxy.planets.find(planet => planet.id === audio.track?.planetId)
   // Real playback, including search, queue and imported audio, activates the same camera path.
   // Album resolution updates planetId asynchronously; manual release is never overridden by it.

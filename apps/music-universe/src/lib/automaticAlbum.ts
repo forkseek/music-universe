@@ -2,6 +2,7 @@ import type { Album, Track } from './generateAlbumGalaxy'
 import type { AudioTrackInfo } from '../hooks/useAudioPlayback'
 import type { MusicPlatform, PlatformSong } from './musicPlatforms'
 import { musicWorldMedia } from './musicWorldClient'
+import { albumCoverLoader } from './albumCover'
 
 export interface PlayingIdentity {
   provider?: MusicPlatform
@@ -96,16 +97,4 @@ export class LatestAlbumRequest {
   }
 }
 
-export function preloadAlbumCover(url: string, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal.aborted) { reject(signal.reason); return }
-    const image = new Image()
-    image.crossOrigin = 'anonymous'
-    const cleanup = () => { image.onload = image.onerror = null; signal.removeEventListener('abort', abort) }
-    const abort = () => { cleanup(); image.src = ''; reject(signal.reason) }
-    image.onload = () => { cleanup(); resolve() }
-    image.onerror = () => { cleanup(); reject(new Error('专辑封面暂时无法加载，音乐仍可继续播放。')) }
-    signal.addEventListener('abort', abort, { once: true })
-    image.src = url
-  })
-}
+export const preloadAlbumCover = (url: string, signal: AbortSignal) => albumCoverLoader.load(url, signal)

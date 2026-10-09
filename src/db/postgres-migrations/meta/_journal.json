@@ -15,6 +15,13 @@
       "when": 1791460867388,
       "tag": "0001_good_blur",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791522170900,
+      "tag": "0002_secret_naoko",
+      "breakpoints": true
     }
   ]
 }

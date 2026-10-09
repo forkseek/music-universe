@@ -20,6 +20,7 @@
     "test:orbits": "node tests/orbits.mjs",
     "test:follow": "node tests/playback-follow.mjs",
     "test:audio-recovery": "node tests/audio-recovery.mjs",
+    "test:album-cover": "node tests/album-cover-sync.mjs",
     "test:auto-next": "node tests/automatic-next.mjs",
     "test:follow-rendering": "node tests/follow-rendering.mjs",
     "test:axis-lighting": "node tests/axis-lighting.mjs",

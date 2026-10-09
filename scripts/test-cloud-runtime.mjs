@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { fork, spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -140,10 +140,27 @@ globalThis.fetch = async (input, init) => {
   await api(b, '/api/music/netease/logout', {});
   const revoked = await fetch(a.origin + playback.url, { headers: { Cookie: cookie, Range: 'bytes=0-2' } });
   assert.equal(revoked.status, 404); await revoked.arrayBuffer();
+  const fresh = await fetch(a.origin + '/api/music/session', { headers: { 'X-Music-World': '1' } });
+  const rateCookie = fresh.headers.get('set-cookie')?.split(';')[0]; await fresh.arrayBuffer(); assert.ok(rateCookie);
+  const rateToken = rateCookie.slice(rateCookie.indexOf('=') + 1);
+  const fixtureOwner = (await database.query('SELECT id FROM users WHERE session_token_hash = $1', [createHash('sha256').update(rateToken).digest('hex')])).rows[0].id;
+  // The test database is a single PGlite engine behind a wire server. Concurrent QR
+  // transactions need true PostgreSQL sessions; use lock-free status reads here.
+  await database.query('INSERT INTO music_rate_limits (user_id, action, count, expires_at) VALUES ($1, $2, $3, $4)',
+    [fixtureOwner, 'requests', 94, new Date(Date.now() + 60000).toISOString()]);
+  const concurrentRequests = await Promise.all(Array.from({ length: 10 }, async (_, index) => {
+    const server = index % 2 ? a : b;
+    const response = await fetch(server.origin + '/api/music/netease/status', { signal: AbortSignal.timeout(15000),
+      headers: { 'X-Music-World': '1', Origin: server.origin, Cookie: rateCookie } });
+    await response.arrayBuffer(); return response.status;
+  }));
+  assert.equal(concurrentRequests.filter(status => status === 200).length, 6);
+  assert.equal(concurrentRequests.filter(status => status === 429).length, 4);
   const proof = { checkedAt: new Date().toISOString(), independentProductionProcesses: 2, realPackagedWorkerLoaded: true,
     qrLoginAcrossProcesses: true, searchToPlayAcrossProcesses: true, encryptedSharedState: true, logoutRevokesAcrossProcesses: true,
     nativeBrowserPlaybackEnded: native.ended, audioFixtureBytes: wave.length, audioFixtureDuration: native.duration, nativeRangeRequests: responseLengths.length,
     eachAudioResponseAtMost4MiB: true, seeking: true, oversizedUnsegmentedRequestRejected: true,
+    concurrentRequestLimitSharedAcrossProcesses: { initialFixtureCount: 94, allowed: 6, rejected: 4, limit: 100 },
     dataSource: 'Generated tone and explicit platform fixtures; isolated PGlite PostgreSQL wire server. Not real platform authorization.' };
   writeFileSync(path.join(results, 'cloud-runtime-proof.json'), JSON.stringify(proof, null, 2));
   console.log(JSON.stringify(proof, null, 2));
