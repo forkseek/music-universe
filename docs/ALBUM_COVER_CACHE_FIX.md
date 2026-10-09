@@ -18,6 +18,8 @@ Netlify Next Runtime 5.16.2 为响应生成的 `Netlify-Vary` 只包括 `__nextD
 
 方案遵循 [Netlify 缓存变体与清除规则](https://docs.netlify.com/build/caching/caching-overview/)。没有新增依赖、数据库迁移或凭据配置。
 
+完整 Source ZIP 的约 151 MB 素材上传曾超时。发布包可只上传源码与媒体校验清单，云端构建从本项目公开仓库的固定提交恢复原有 `public/audio` / `public/media` 文件，逐文件校验 SHA-256。清单未提供时，普通本地构建不下载任何文件。所有原有素材保持完整，不影响运行时请求或视觉；不向 GitHub 传输 Netlify 凭据。完整源码包仍可用于回退发布方式。
+
 ## 验证与回滚
 
 `npm run check`、`npm run build -- --webpack`；星系运行 `UNIVERSE_TEST_URL` 对应预览或公网地址的 `npm run test:album-cover`。`node scripts/verify-album-covers.mjs` 默认检查公网站点，也可用 `MUSIC_TEST_ORIGIN` 指向隔离生产服务。

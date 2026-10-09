@@ -8,7 +8,7 @@
     "node": ">=24.0.0 <25"
   },
   "scripts": {
-    "prebuild": "node scripts/trace-music-worker.mjs",
+    "prebuild": "node scripts/restore-deploy-assets.mjs && node scripts/trace-music-worker.mjs",
     "dev": "next dev --hostname 127.0.0.1",
     "build": "npm run build:universe && next build",
     "build:universe": "node scripts/sync-universe.mjs",
