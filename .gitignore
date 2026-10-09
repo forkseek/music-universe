@@ -6,6 +6,7 @@ node_modules/
 .next-hall-review/
 .next-player-review/
 .next-qq-integration/
+.next-login-audit-*/
 work/qq-integration/
 work/mineradio-reference/
 work/music-platform-*/

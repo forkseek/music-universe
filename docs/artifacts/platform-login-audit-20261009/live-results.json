@@ -1,0 +1,116 @@
+{
+  "origin": "https://music-universe-forkseek.netlify.app",
+  "checkedAt": "2026-10-09T13:21:18.143Z",
+  "providers": [
+    {
+      "provider": "qq",
+      "status": {
+        "httpStatus": 200,
+        "contentType": "application/json",
+        "provider": "qq",
+        "authorized": false,
+        "musicAuthorized": false,
+        "message": "尚未配置本应用的 QQ 官方授权。需要 QQ 互联 App ID、App Key 和登记回调地址。",
+        "loginMode": "oauth",
+        "loginAvailable": false,
+        "loginIdPresent": false
+      },
+      "login": {
+        "httpStatus": 503,
+        "contentType": "application/json",
+        "error": {
+          "code": "QQ_OFFICIAL_CONFIG_REQUIRED",
+          "message": "尚未配置本应用的 QQ 官方授权。需要 QQ 互联 App ID、App Key 和登记回调地址。"
+        },
+        "loginIdPresent": false
+      }
+    },
+    {
+      "provider": "netease",
+      "status": {
+        "httpStatus": 200,
+        "contentType": "application/json",
+        "provider": "netease",
+        "authorized": false,
+        "message": "连接账号后可按账号权益播放。",
+        "loginMode": "qr",
+        "loginAvailable": true,
+        "loginIdPresent": false
+      },
+      "login": {
+        "httpStatus": 200,
+        "contentType": "application/json",
+        "provider": "netease",
+        "message": "请用网易云音乐 App 扫码并确认。",
+        "status": "pending",
+        "imagePresent": true,
+        "loginIdPresent": true
+      },
+      "poll": {
+        "httpStatus": 200,
+        "contentType": "application/json",
+        "provider": "netease",
+        "message": "请用网易云音乐 App 扫码并确认。",
+        "status": "pending",
+        "imagePresent": true,
+        "loginIdPresent": true
+      },
+      "cancel": {
+        "httpStatus": 200,
+        "contentType": "application/json",
+        "ok": true,
+        "loginIdPresent": false
+      }
+    },
+    {
+      "provider": "kugou",
+      "status": {
+        "httpStatus": 200,
+        "contentType": "application/json",
+        "provider": "kugou",
+        "authorized": false,
+        "message": "连接账号后可按账号权益播放。",
+        "loginMode": "window",
+        "loginAvailable": false,
+        "loginIdPresent": false
+      },
+      "login": {
+        "httpStatus": 409,
+        "contentType": "application/json",
+        "error": {
+          "code": "DESKTOP_LOGIN_UNAVAILABLE",
+          "message": "此平台需要本机官方登录窗口，请在本机运行应用。"
+        },
+        "loginIdPresent": false
+      }
+    },
+    {
+      "provider": "qishui",
+      "status": {
+        "httpStatus": 200,
+        "contentType": "application/json",
+        "provider": "qishui",
+        "authorized": false,
+        "message": "连接账号后可按账号权益播放。",
+        "loginMode": "qr",
+        "loginAvailable": false,
+        "loginIdPresent": false
+      },
+      "login": {
+        "httpStatus": 409,
+        "contentType": "application/json",
+        "error": {
+          "code": "DESKTOP_LOGIN_UNAVAILABLE",
+          "message": "此平台需要本机官方登录窗口，请在本机运行应用。"
+        },
+        "loginIdPresent": false
+      }
+    }
+  ],
+  "session": {
+    "httpStatus": 200,
+    "contentType": "application/json",
+    "ok": true,
+    "loginIdPresent": false
+  }
+}

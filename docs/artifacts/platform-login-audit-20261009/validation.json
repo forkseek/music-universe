@@ -1,0 +1,22 @@
+{
+  "checkedAt": "2026-10-09T13:39:17.498Z",
+  "lint": true,
+  "typecheck": true,
+  "tests": {
+    "files": 21,
+    "passed": 182
+  },
+  "productionBuild": {
+    "next": "16.3.8",
+    "passed": true
+  },
+  "realApi": {
+    "tested": true,
+    "personalAuthorizationCompleted": false
+  },
+  "browser": {
+    "providers": 4,
+    "pageErrors": 0
+  },
+  "publishedToNetlify": false
+}

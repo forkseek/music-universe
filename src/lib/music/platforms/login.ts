@@ -26,21 +26,22 @@ export function parsePlatformProfile(value: Values): MusicProfile {
   try { const url = new URL(rawAvatar); if (["https:", "http:"].includes(url.protocol) && !url.username && !url.password) { url.protocol = "https:"; avatar = url.href; } } catch { /* Optional profile artwork. */ }
   return { id: text(value.userId || value.id, 100), nickname: text(value.nickname, 100), avatar };
 }
-export async function platformStatus(userId: string, provider: Platform, signal: AbortSignal): Promise<PlatformStatus> {
+const desktopLoginMessage = (provider: Platform) => `${platformLabels[provider]}暂不支持当前网站的在线账号登录；现有登录功能需要在本机运行应用。`;
+export async function platformStatus(userId: string, provider: Platform, signal: AbortSignal, request?: Request): Promise<PlatformStatus> {
   const loginMode = provider === "qq" || provider === "kugou" ? "window" : "qr";
-  const base = { provider, loginMode, loginAvailable: provider === "netease" || desktopAvailable() } as const;
+  const base = { provider, loginMode, loginAvailable: provider === "netease" || desktopAvailable(request) } as const;
   if (provider === "qq") {
-    const result = await qqAccountStatus(userId, signal);
+    const result = await qqAccountStatus(userId, signal, false, request);
     return { ...result, provider, user: "user" in result ? result.user : undefined };
   }
   const account = readAccount(userId, provider);
-  if (!account) return { ...base, authorized: false, message: "连接账号后可按账号权益播放。" };
+  if (!account) return { ...base, authorized: false, message: base.loginAvailable ? "连接账号后可按账号权益播放。" : desktopLoginMessage(provider) };
   try {
     const result = await platformCall(provider, "status", {}, account.cookie, signal);
     const authorized = result.loggedIn === true && result.reauthRequired !== true;
     const profile = parsePlatformProfile(result);
     const user = profile.id && profile.nickname ? profile : account.profile;
-    return { ...base, authorized, user: authorized ? user : undefined, message: authorized ? "已连接 " + (user.nickname || platformLabels[provider]) : "登录已过期，请重新连接。" };
+    return { ...base, authorized, user: authorized ? user : undefined, message: authorized ? "已连接 " + (user.nickname || platformLabels[provider]) : base.loginAvailable ? "登录已过期，请重新连接。" : desktopLoginMessage(provider) };
   } catch {
     return { ...base, authorized: false, user: account.profile, message: "账号已保存，暂时无法向平台确认登录状态，请稍后刷新。" };
   }
@@ -81,10 +82,7 @@ export function logoutPlatform(userId: string, provider: Platform) {
 }
 export async function startPlatformLogin(userId: string, provider: Platform, request: Request) {
   if (provider === "qq") return startQqOAuth(userId, request);
-  if (provider !== "netease") {
-    const host = (request.headers.get("host") || new URL(request.url).host).split(":")[0];
-    if (!["127.0.0.1", "localhost"].includes(host) || !desktopAvailable()) throw new RequestError(409, "此平台需要本机官方登录窗口，请在本机运行应用。", "DESKTOP_LOGIN_UNAVAILABLE");
-  }
+  if (provider !== "netease" && !desktopAvailable(request)) throw new RequestError(409, desktopLoginMessage(provider), "DESKTOP_LOGIN_UNAVAILABLE");
   for (const [key, job] of jobs()) if (job.expiresAt <= Date.now()) { terminal(job, "expired", "二维码已过期，请重新连接。"); jobs().delete(key); }
   cancelLogin(userId, provider);
   if (jobs().size >= 16 || (provider !== "netease" && [...jobs().values()].filter(job => job.child && active(job)).length >= 2)) throw new RequestError(429, "请先完成或关闭其他登录窗口。", "LOGIN_BUSY");

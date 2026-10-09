@@ -6,6 +6,6 @@ export const runtime = "nodejs";
 export function GET(request: NextRequest) {
   return withUser(request, async (userId) => {
     requireSameOrigin(request); limitPlayerRequests(userId);
-    return await qqAccountStatus(userId, request.signal, request.nextUrl.searchParams.get("refresh") === "1") ?? radiohandStatus(request.signal);
+    return await qqAccountStatus(userId, request.signal, request.nextUrl.searchParams.get("refresh") === "1", request) ?? radiohandStatus(request.signal);
   }, true);
 }

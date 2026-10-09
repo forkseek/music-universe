@@ -1,0 +1,26 @@
+{
+  "origin": "http://127.0.0.1:3018",
+  "errors": [],
+  "providers": [
+    {
+      "provider": "qq",
+      "message": "尚未配置本应用的 QQ 官方授权。需要 QQ 互联 App ID、App Key 和登记回调地址。",
+      "loginDisabled": true
+    },
+    {
+      "provider": "netease",
+      "message": "连接账号后可按账号权益播放。",
+      "loginDisabled": false
+    },
+    {
+      "provider": "kugou",
+      "message": "酷狗音乐暂不支持当前网站的在线账号登录；现有登录功能需要在本机运行应用。",
+      "loginDisabled": true
+    },
+    {
+      "provider": "qishui",
+      "message": "汽水音乐暂不支持当前网站的在线账号登录；现有登录功能需要在本机运行应用。",
+      "loginDisabled": true
+    }
+  ]
+}

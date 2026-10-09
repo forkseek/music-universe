@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, context: Context) {
   return withUser(request, async userId => {
     requireSameOrigin(request);
     const provider = parsePlatform(params.provider); rateLimitMusic(userId, params.action);
-    if (params.action === "status") return platformStatus(userId, provider, request.signal);
+    if (params.action === "status") return platformStatus(userId, provider, request.signal, request);
     if (params.action === "search") return searchPlatform(userId, provider, request.nextUrl.searchParams.get("q") || "", Number(request.nextUrl.searchParams.get("page") || 1), request.signal);
     if (params.action === "lyrics") return readPlatformLyrics(userId, provider, request.nextUrl.searchParams.get("id") || "", request.signal);
     if (params.action === "poll") return pollPlatformLogin(userId, provider, request.nextUrl.searchParams.get("id") || "");

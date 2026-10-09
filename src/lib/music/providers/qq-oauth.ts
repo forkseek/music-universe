@@ -29,9 +29,23 @@ export function qqOAuthConfig() {
     return { appId, secret, redirect: url.href };
   } catch { return null; }
 }
-export function qqOAuthAvailability() {
-  return { loginAvailable: !!qqOAuthConfig(), loginMode: "oauth" as const,
-    message: qqOAuthConfig() ? "通过 QQ 官方授权页面扫码连接账号。QQ 音乐播放需要单独授权。" : "尚未配置本应用的 QQ 官方授权。需要 QQ 互联 App ID、App Key 和登记回调地址。" };
+export function qqOAuthAvailability(request?: Request): {
+  configured: boolean; loginAvailable: boolean; loginMode: "oauth"; message: string;
+  loginErrorCode?: "QQ_OFFICIAL_CONFIG_REQUIRED" | "QQ_CALLBACK_ORIGIN_MISMATCH";
+} {
+  const config = qqOAuthConfig();
+  const base = { configured: !!config, loginMode: "oauth" as const };
+  if (!config) return { ...base, loginAvailable: false, loginErrorCode: "QQ_OFFICIAL_CONFIG_REQUIRED", message: "尚未配置本应用的 QQ 官方授权。需要 QQ 互联 App ID、App Key 和登记回调地址。" };
+  if (request || process.env.APP_ORIGIN?.trim()) {
+    try {
+      const url = request && new URL(request.url);
+      const origin = new URL(process.env.APP_ORIGIN?.trim() || (url && url.protocol + "//" + (request?.headers.get("host") || url.host)) || "").origin;
+      if (new URL(config.redirect).origin !== origin) throw new Error("origin");
+    } catch {
+      return { ...base, loginAvailable: false, loginErrorCode: "QQ_CALLBACK_ORIGIN_MISMATCH", message: "QQ 回调地址与当前站点不一致，请检查官方登记域名和 APP_ORIGIN。" };
+    }
+  }
+  return { ...base, loginAvailable: true, message: "通过 QQ 官方授权页面扫码连接账号。QQ 音乐播放需要单独授权。" };
 }
 
 /** Documented QQ Connect endpoints, without platform cookies or borrowed app IDs. */
@@ -101,11 +115,8 @@ export function logoutQqOAuth(owner: string) {
 }
 export function startQqOAuth(owner: string, request?: Request) {
   const config = qqOAuthConfig();
-  if (!config) throw new RequestError(503, qqOAuthAvailability().message, "QQ_OFFICIAL_CONFIG_REQUIRED");
-  if (request) {
-    const url = new URL(request.url), origin = process.env.APP_ORIGIN || new URL(url.protocol + "//" + (request.headers.get("host") || url.host)).origin;
-    if (new URL(config.redirect).origin !== origin) throw new RequestError(503, "QQ 回调地址与当前站点不一致，请检查官方登记域名和 APP_ORIGIN。", "QQ_CALLBACK_ORIGIN_MISMATCH");
-  }
+  const availability = qqOAuthAvailability(request);
+  if (!config || !availability.loginAvailable) throw new RequestError(503, availability.message, availability.loginErrorCode || "QQ_OFFICIAL_CONFIG_REQUIRED");
   for (const [key, job] of jobs()) if (job.expiresAt + 600000 <= Date.now()) { job.abort.abort(); jobs().delete(key); }
   if (jobs().size >= 256 && !jobs().has(owner)) throw new RequestError(429, "登录请求较多，请稍后重试。", "QQ_LOGIN_BUSY");
   cancelQqOAuth(owner);
@@ -163,9 +174,9 @@ async function renew(owner: string, account: VerifiedAccount): Promise<VerifiedA
   })().finally(() => { if (existing.get(owner) === pending) existing.delete(owner); });
   existing.set(owner, pending); return pending;
 }
-export async function qqOAuthStatus(owner: string, signal: AbortSignal, refresh = false) {
-  const availability = qqOAuthAvailability();
-  const base = { provider: "qq" as const, configured: availability.loginAvailable, ...availability, musicAuthorized: false as const };
+export async function qqOAuthStatus(owner: string, signal: AbortSignal, refresh = false, request?: Request) {
+  const availability = qqOAuthAvailability(request);
+  const base = { provider: "qq" as const, ...availability, musicAuthorized: false as const };
   let account = verified(owner);
   if (!account) return { ...base, authorized: false, profileAvailable: false };
   try {
