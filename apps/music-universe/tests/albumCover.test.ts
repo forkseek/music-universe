@@ -30,6 +30,21 @@ test('recognition hands the same decoded artwork to the star without a second im
   assert.equal(await loader.load(path(1), signal()), image)
   assert.equal(images.length, 1)
 })
+
+test('versioned cover paths share decoded images while unrelated or foreign paths remain uncached', async () => {
+  const { loader, images } = fixture()
+  for (const url of ['/api/music/album/cover/v2/netease/6548', '/mw/api/music/album/cover/v2/netease/92895788']) {
+    const count = images.length, pending = loader.load(url, signal()); images.at(-1)!.ready()
+    const image = await pending
+    assert.equal(loader.peek(url), image)
+    assert.equal(await loader.load(url, signal()), image)
+    assert.equal(images.length, count + 1)
+  }
+  for (const url of ['https://foreign.example/api/music/album/cover/v2/netease/6548', '/api/music/album/cover/v2/invalid/6548', '/api/music/album/cover/v2/netease/not-an-id']) {
+    const pending = loader.load(url, signal()); images.at(-1)!.ready(); await pending
+    assert.equal(loader.peek(url), undefined)
+  }
+})
 test('a transient image failure recovers once and does not cache the failed image', async () => {
   const { loader, images } = fixture()
   const pending = loader.load(path(1), signal()); images[0].fail()

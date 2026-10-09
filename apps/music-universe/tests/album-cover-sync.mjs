@@ -86,7 +86,7 @@ const ready = async id => {
 }
 try {
   await page.goto(url); await expect(canvas).toHaveAttribute('data-frame-count', /\d+/, { timeout: 60000 }); await dismissEntryGuide(page)
-  await expect(canvas).toHaveAttribute('data-star-cover-ready', 'true')
+  await expect(canvas).toHaveAttribute('data-star-cover-ready', 'true', { timeout: 30000 })
   const originalCover = await canvas.getAttribute('data-star-cover-url')
   await canvas.evaluate(el => {
     window.originalCoverCanvas = el

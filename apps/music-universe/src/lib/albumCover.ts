@@ -15,7 +15,7 @@ function shareable(url: string) {
   const base = globalThis.location?.href || 'http://localhost/'
   try {
     const address = new URL(url, base)
-    return address.origin === new URL(base).origin && /^\/(mw\/)?api\/(music\/album\/cover|qq\/cover)$/.test(address.pathname)
+    return address.origin === new URL(base).origin && /^\/(mw\/)?api\/(music\/album\/cover(?:\/v2\/netease\/\d{1,20})?|qq\/cover)$/.test(address.pathname)
   } catch { return false }
 }
 
